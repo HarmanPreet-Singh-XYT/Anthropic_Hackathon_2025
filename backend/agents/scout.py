@@ -26,6 +26,7 @@ from .scout_schemas import (
 VALIDATION_THRESHOLD = 0.01  # Lowered for testing
 MAX_VALIDATION_CONCURRENCY = 5
 MIN_CONTENT_LENGTH = 100
+SOCIAL_MEDIA_EXCLUSIONS = "-reddit -linkedin -facebook -twitter -instagram -tiktok"
 
 
 class ScoutAgent:
@@ -36,7 +37,7 @@ class ScoutAgent:
     - Uses Firecrawl's internal LLM for validation during scraping
     """
 
-    def __init__(self(self, firecrawl_api_key: str = None):
+    def __init__(self, firecrawl_api_key: str = None):
         """
         Initialize Scout Agent
 
