@@ -4,16 +4,20 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Upload, Link2 } from 'lucide-react';
+import { Upload, Link2, Loader2 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import ThemeToggle from '@/components/ThemeToggle';
-
 
 export default function ScholarshipAssistant() {
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState<string>('');
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
   const { darkMode } = useTheme();
+
+  // Update this to your Python backend URL
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
   useEffect(() => {
     if (darkMode) {
@@ -39,6 +43,7 @@ export default function ScholarshipAssistant() {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile) {
       setFile(droppedFile);
+      setError('');
     }
   };
 
@@ -46,12 +51,82 @@ export default function ScholarshipAssistant() {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      setError('');
     }
   };
 
-  const handleContinue = () => {
-    if (file || url) {
-      alert('Processing your application...');
+  const normalizeUrl = (urlString: string): string => {
+    const trimmed = urlString.trim();
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      return 'https://' + trimmed;
+    }
+    return trimmed;
+  };
+
+  const isValidUrl = (urlString: string): boolean => {
+    try {
+      new URL(urlString);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const handleContinue = async () => {
+    // Validation
+    if (!file || !url) {
+      setError('Both resume and scholarship URL are required');
+      return;
+    }
+
+    const normalizedUrl = normalizeUrl(url);
+    
+    if (!isValidUrl(normalizedUrl)) {
+      setError('Please enter a valid URL (e.g., example.com or https://example.com)');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      // Create FormData to send file and URL
+      const formData = new FormData();
+      formData.append('resume', file);
+      formData.append('scholarship_url', normalizedUrl);
+
+      // Send to Python backend API
+      const response = await fetch(`${BACKEND_URL}/api/scholarship-application`, {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header - browser will set it automatically with boundary for multipart/form-data
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to process application' }));
+        throw new Error(errorData.message || `Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Handle success
+      console.log('Success:', data);
+      alert('Application processed successfully!');
+      
+      // Optional: Reset form or redirect to next page
+      // setFile(null);
+      // setUrl('');
+      // router.push('/next-page');
+
+    } catch (err) {
+      console.error('Error:', err);
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Unable to connect to server. Please check if the backend is running.');
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred while processing your application');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -71,9 +146,15 @@ export default function ScholarshipAssistant() {
 
         <Card className="shadow-xl dark:bg-black dark:border-gray-700">
           <CardContent className="space-y-6">
+            {error && (
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="resume" className="text-base font-medium dark:text-gray-200">
-                Resume Upload
+                Resume Upload <span className="text-red-500">*</span>
               </Label>
               <div
                 onDragOver={handleDragOver}
@@ -109,13 +190,13 @@ export default function ScholarshipAssistant() {
 
             <div className="space-y-2">
               <Label htmlFor="scholarship-url" className="text-base font-medium dark:text-gray-200">
-                Scholarship URL
+                Scholarship URL <span className="text-red-500">*</span>
               </Label>
               <div className="relative">
                 <Link2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-gray-500" />
                 <Input
                   id="scholarship-url"
-                  type="url"
+                  type="text"
                   placeholder="https://example.com/scholarship"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
@@ -126,10 +207,17 @@ export default function ScholarshipAssistant() {
 
             <Button
               onClick={handleContinue}
-              disabled={!file && !url}
-              className="w-full h-12 text-base font-medium dark:bg-gray-400 dark:hover:bg-gray-200"
+              disabled={!file || !url || isLoading}
+              className="w-full h-12 text-base font-medium dark:bg-gray-400 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Continue
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                'Continue'
+              )}
             </Button>
           </CardContent>
         </Card>
