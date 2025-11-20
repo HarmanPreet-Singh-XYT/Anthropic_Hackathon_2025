@@ -1,8 +1,8 @@
 /.env
-/node_modules
 /.claude
 
 # dependencies
+**/node_modules/
 /node_modules
 /.pnp
 .pnp.*
@@ -40,4 +40,4 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+**/next-env.d.ts
