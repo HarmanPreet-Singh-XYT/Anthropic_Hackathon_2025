@@ -181,9 +181,33 @@ If a field is not present, leave it empty or null. Do NOT guess.
         """Run Firecrawl scrape in a thread."""
         return await asyncio.to_thread(self.firecrawl.scrape, url=url, formats=['markdown'], only_main_content=True)
 
-    async def _run_firecrawl_scrape(self, *, url: str) -> Any:
-        """Run Firecrawl scrape in a thread."""
-        return await asyncio.to_thread(self.firecrawl.scrape, url=url, formats=['markdown'], only_main_content=True)
+    async def _scrape_reddit_url(self, url: str) -> str:
+        """
+        Scrape Reddit URL by converting to JSON API endpoint.
+        Reddit blocks Firecrawl but allows JSON API access.
+        """
+        try:
+            # Convert Reddit URL to JSON API format
+            json_url = url.rstrip('/') + '.json'
+
+            def _fetch():
+                headers = {'User-Agent': 'ScholarFit/1.0'}
+                resp = requests.get(json_url, headers=headers, timeout=10)
+                resp.raise_for_status()
+                data = resp.json()
+
+                # Extract post content
+                if isinstance(data, list) and len(data) > 0:
+                    post_data = data[0]['data']['children'][0]['data']
+                    title = post_data.get('title', '')
+                    selftext = post_data.get('selftext', '')
+                    return f"# {title}\n\n{selftext}"
+                return ""
+
+            return await asyncio.to_thread(_fetch)
+        except Exception as e:
+            print(f"    [ERROR] Reddit scrape failed for {url}: {e}")
+            return ""
 
     async def _validate_with_firecrawl(self, url: str, mode: str, content_hint: str = "") -> Optional[ValidationResult]:
         """Call Firecrawl LLM to classify and score a search hit."""

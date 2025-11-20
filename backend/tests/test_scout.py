@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Load environment variables early
+load_dotenv()
+
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -18,9 +21,6 @@ from agents.scout import ScoutAgent
 
 async def test_scout_agent():
     """Test Scout Agent with real scholarship URL"""
-
-    # Load environment variables
-    load_dotenv()
 
     # Test URL - Coca-Cola Scholars Program
     test_url = "https://www.coca-colascholarsfoundation.org/apply/"
