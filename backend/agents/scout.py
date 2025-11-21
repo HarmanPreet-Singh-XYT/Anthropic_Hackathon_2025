@@ -717,7 +717,6 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
         
         past_winner_context = await self.deep_search_parallel(
             scholarship_url=scholarship_url,
-            scholarship_hint=scholarship_name,
             debug=debug
         )
 
