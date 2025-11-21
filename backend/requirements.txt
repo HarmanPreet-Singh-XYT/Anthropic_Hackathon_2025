@@ -11,6 +11,11 @@ sentence-transformers>=3.0.0
 # PDF Processing
 PyPDF2>=3.0.0
 
+# Web API Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.9
+
 # Configuration Management
 python-dotenv>=1.0.0
 pydantic>=2.0.0

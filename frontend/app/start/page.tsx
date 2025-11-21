@@ -2,14 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2 } from 'lucide-react';
+import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { uploadResume } from '@/lib/api';
 
 export default function StartPage() {
     const [file, setFile] = useState<File | null>(null);
     const [url, setUrl] = useState<string>('');
     const [isDragging, setIsDragging] = useState<boolean>(false);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<{ message: string; chunks: number } | null>(null);
     const router = useRouter();
 
     // Drag & Drop Handlers
@@ -36,32 +39,71 @@ export default function StartPage() {
     };
 
     const validateAndSetFile = (f: File) => {
-        // Basic validation
-        if (f.size > 5 * 1024 * 1024) {
-            alert("File is too large. Max 5MB.");
+        // Clear previous error/success
+        setError(null);
+        setSuccess(null);
+
+        // Validate file type
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+            setError("Only PDF files are supported");
             return;
         }
+
+        // Validate size
+        if (f.size > 5 * 1024 * 1024) {
+            setError("File is too large. Max 5MB.");
+            return;
+        }
+
+        if (f.size === 0) {
+            setError("File is empty");
+            return;
+        }
+
         setFile(f);
     };
 
     const removeFile = (e: React.MouseEvent) => {
         e.stopPropagation();
         setFile(null);
+        setError(null);
+        setSuccess(null);
     };
 
     const handleSubmit = async () => {
-        if (!file && !url) return; // Should be disabled anyway
+        if (!file && !url) return;
 
         setIsSubmitting(true);
+        setError(null);
+        setSuccess(null);
 
-        // Simulate processing
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        try {
+            if (file) {
+                // Upload resume via API
+                const response = await uploadResume(file);
 
-        // Navigate to main app (mock)
-        // In a real app, we'd pass this data to the next step
-        console.log("Submitting:", { file, url });
-        router.push('/main');
+                // Show success message
+                setSuccess({
+                    message: response.message,
+                    chunks: response.chunks_stored
+                });
+
+                // Wait a moment to show success, then navigate
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                router.push('/main');
+            } else if (url) {
+                // TODO: Handle scholarship URL submission
+                console.log("Submitting URL:", url);
+                router.push('/main');
+            }
+        } catch (err) {
+            console.error("Upload error:", err);
+            setError(err instanceof Error ? err.message : "Failed to upload resume. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
+
 
     return (
         <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
@@ -223,6 +265,41 @@ export default function StartPage() {
                                 />
                             </div>
                         </div>
+
+                        {/* Error Message */}
+                        <AnimatePresence>
+                            {error && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3"
+                                >
+                                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                                    <p className="text-sm text-red-200">{error}</p>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Success Message */}
+                        <AnimatePresence>
+                            {success && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center gap-3"
+                                >
+                                    <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
+                                    <div className="flex-1">
+                                        <p className="text-sm text-green-200 font-medium">{success.message}</p>
+                                        <p className="text-xs text-green-300/70 mt-1">
+                                            {success.chunks} chunks stored in vector database
+                                        </p>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
                         {/* Action Button */}
                         <button
