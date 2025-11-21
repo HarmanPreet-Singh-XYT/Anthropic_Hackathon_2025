@@ -9,7 +9,7 @@ from .narrative_architect import NarrativeArchitect
 from .style_matcher import StyleMatcher
 from .authenticity_filter import AuthenticityFilter
 from .refinement_loop import RefinementLoop
-from .multidraft_generator import MultiDraftGenerator
+from .multi_draft_generator import MultiDraftGenerator
 
 # Example usage
 # # Initialize engine

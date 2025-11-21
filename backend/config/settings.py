@@ -49,9 +49,9 @@ class Settings:
 
     def _create_directories(self) -> None:
         """Create necessary directories if they don't exist"""
-        # TODO: Create data directories
-        # TODO: Create chroma_db directory
-        pass
+        self.prompts_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.chroma_dir.mkdir(parents=True, exist_ok=True)
 
     def validate(self) -> tuple[bool, list[str]]:
         """
@@ -62,12 +62,40 @@ class Settings:
         """
         errors = []
 
-        # TODO: Check required API keys
-        # TODO: Validate paths exist
-        # TODO: Validate numeric ranges
-        # TODO: Return validation result
+        # Check required API keys
+        if not self.anthropic_api_key:
+            errors.append("ANTHROPIC_API_KEY is required but not set")
+        if not self.tavily_api_key:
+            errors.append("TAVILY_API_KEY is required but not set")
 
-        pass
+        # Validate paths exist
+        if not self.base_dir.exists():
+            errors.append(f"Base directory does not exist: {self.base_dir}")
+
+        # Validate numeric ranges
+        if not 0.0 <= self.temperature <= 1.0:
+            errors.append(f"TEMPERATURE must be between 0.0 and 1.0, got {self.temperature}")
+        
+        if self.chunk_size <= 0:
+            errors.append(f"CHUNK_SIZE must be positive, got {self.chunk_size}")
+        
+        if self.chunk_overlap < 0:
+            errors.append(f"CHUNK_OVERLAP must be non-negative, got {self.chunk_overlap}")
+        
+        if self.chunk_overlap >= self.chunk_size:
+            errors.append(f"CHUNK_OVERLAP ({self.chunk_overlap}) must be less than CHUNK_SIZE ({self.chunk_size})")
+        
+        if self.max_retrieval_results <= 0:
+            errors.append(f"MAX_RETRIEVAL_RESULTS must be positive, got {self.max_retrieval_results}")
+        
+        if not 0.0 <= self.match_threshold <= 1.0:
+            errors.append(f"MATCH_THRESHOLD must be between 0.0 and 1.0, got {self.match_threshold}")
+        
+        if self.default_word_limit <= 0:
+            errors.append(f"DEFAULT_WORD_LIMIT must be positive, got {self.default_word_limit}")
+
+        # Return validation result
+        return (len(errors) == 0, errors)
 
     @property
     def is_configured(self) -> bool:
@@ -77,8 +105,7 @@ class Settings:
         Returns:
             True if API keys are set, False otherwise
         """
-        # TODO: Check essential configuration
-        pass
+        return bool(self.anthropic_api_key and self.tavily_api_key)
 
 
 # Global settings instance

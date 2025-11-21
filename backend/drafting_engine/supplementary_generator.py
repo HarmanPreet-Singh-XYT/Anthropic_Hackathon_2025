@@ -33,7 +33,7 @@ class SupplementaryGenerator:
             List of bullet point suggestions with original, improved, rationale
         """
         
-        prompt = load_prompt("resume_optimizer", {
+        prompt = load_prompt("optimizer", {
             "scholarship_values": json.dumps(scholarship_profile['priorities'], indent=2),
             "weighted_priorities": json.dumps(scholarship_profile['weighted_priorities'], indent=2),
             "student_experiences": json.dumps(content_selection, indent=2),
