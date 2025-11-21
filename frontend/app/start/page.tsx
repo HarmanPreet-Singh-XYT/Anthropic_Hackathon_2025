@@ -1,32 +1,39 @@
 "use client"
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Upload, Link2, Loader2 } from 'lucide-react';
+import { Upload, Link2, Loader2, FileText, X, CheckCircle2, Sparkles } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import ThemeToggle from '@/components/ThemeToggle';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+// Utility for cleaner tailwind classes
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export default function ScholarshipAssistant() {
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState<string>('');
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [loadingStep, setLoadingStep] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string>('');
   const { darkMode } = useTheme();
 
-  // Update this to your Python backend URL
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
+  // Theme handling
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (darkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
+  // Drag & Drop Handlers
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
@@ -41,187 +48,321 @@ export default function ScholarshipAssistant() {
     e.preventDefault();
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      setFile(droppedFile);
-      setError('');
-    }
+    if (droppedFile) validateAndSetFile(droppedFile);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      setError('');
-    }
+    if (selectedFile) validateAndSetFile(selectedFile);
   };
 
-  const normalizeUrl = (urlString: string): string => {
-    const trimmed = urlString.trim();
-    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-      return 'https://' + trimmed;
+  const validateAndSetFile = (f: File) => {
+    const validTypes = ['.pdf', '.doc', '.docx', '.tex'];
+    const extension = '.' + f.name.split('.').pop()?.toLowerCase();
+    
+    // Simple validation check (can be expanded)
+    if (f.size > 5 * 1024 * 1024) { // 5MB limit
+        setErrorMessage("File is too large. Max 5MB.");
+        return;
     }
-    return trimmed;
+    
+    setFile(f);
+    setErrorMessage('');
+    setStatus('idle');
   };
 
-  const isValidUrl = (urlString: string): boolean => {
-    try {
-      new URL(urlString);
-      return true;
-    } catch (e) {
-      return false;
-    }
+  const removeFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFile(null);
+  };
+
+  // URL Logic
+  const normalizeUrl = (str: string) => {
+    const trimmed = str.trim();
+    return (!trimmed.startsWith('http') && trimmed.length > 0) ? `https://${trimmed}` : trimmed;
+  };
+
+  const simulateLoadingSteps = () => {
+    const steps = ["Parsing Resume...", "Analyzing Scholarship Criteria...", "Generating Application..."];
+    let i = 0;
+    setLoadingStep(steps[0]);
+    const interval = setInterval(() => {
+      i++;
+      if (i < steps.length) setLoadingStep(steps[i]);
+    }, 1500);
+    return interval;
   };
 
   const handleContinue = async () => {
-    // Validation
     if (!file || !url) {
-      setError('Both resume and scholarship URL are required');
+      setErrorMessage('Please provide both a resume and a URL.');
       return;
     }
 
     const normalizedUrl = normalizeUrl(url);
-    
-    if (!isValidUrl(normalizedUrl)) {
-      setError('Please enter a valid URL (e.g., example.com or https://example.com)');
+    try {
+      new URL(normalizedUrl);
+    } catch {
+      setErrorMessage('Please enter a valid URL.');
       return;
     }
 
-    setIsLoading(true);
-    setError('');
+    setStatus('loading');
+    setErrorMessage('');
+    const loadingInterval = simulateLoadingSteps();
 
     try {
-      // Create FormData to send file and URL
       const formData = new FormData();
       formData.append('resume', file);
       formData.append('scholarship_url', normalizedUrl);
 
-      // Send to Python backend API
       const response = await fetch(`${BACKEND_URL}/api/scholarship-application`, {
         method: 'POST',
         body: formData,
-        // Don't set Content-Type header - browser will set it automatically with boundary for multipart/form-data
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to process application' }));
-        throw new Error(errorData.message || `Server error: ${response.status}`);
-      }
+      clearInterval(loadingInterval);
 
+      if (!response.ok) throw new Error('Failed to process application');
+      
       const data = await response.json();
-      
-      // Handle success
       console.log('Success:', data);
-      alert('Application processed successfully!');
-      
-      // Optional: Reset form or redirect to next page
-      // setFile(null);
-      // setUrl('');
-      // router.push('/next-page');
+      setStatus('success');
 
     } catch (err) {
-      console.error('Error:', err);
-      if (err instanceof TypeError && err.message.includes('fetch')) {
-        setError('Unable to connect to server. Please check if the backend is running.');
-      } else {
-        setError(err instanceof Error ? err.message : 'An error occurred while processing your application');
-      }
-    } finally {
-      setIsLoading(false);
+      clearInterval(loadingInterval);
+      console.error(err);
+      setStatus('error');
+      setErrorMessage('Connection failed. Please try again later.');
     }
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 dark:from-black dark:to-black flex items-center justify-center p-4 transition-colors">
-      <ThemeToggle/>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 md:p-8 transition-colors duration-500 bg-[#FAFAFA] dark:bg-[#09090b] relative overflow-hidden">
+      
+      {/* Ambient Background Effects */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-500/10 dark:bg-blue-500/20 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-purple-500/10 dark:bg-purple-500/20 rounded-full blur-[120px]" />
+      </div>
 
-      <div className="w-full max-w-2xl">
-        <div className="text-center mb-8 space-y-2">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white">
-            Scholarship Application Assistant
+      <div className="absolute top-6 right-6 z-50">
+        <ThemeToggle />
+      </div>
+
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="w-full max-w-xl relative z-10"
+      >
+        {/* Header Section */}
+        <div className="text-center mb-8 space-y-3">
+          <div className="inline-flex items-center justify-center p-2 bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 mb-4">
+            <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-2" />
+            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">AI-Powered Assistant</span>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+            Scholarship Assistant
           </h1>
-          <p className="text-base text-gray-600 dark:text-gray-300">
-            Upload your resume and provide scholarship details to get started
+          <p className="text-lg text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+            Drop your resume and a link. We'll handle the heavy lifting.
           </p>
         </div>
 
-        <Card className="shadow-xl dark:bg-black dark:border-gray-700">
-          <CardContent className="space-y-6">
-            {error && (
-              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="resume" className="text-base font-medium dark:text-gray-200">
-                Resume Upload <span className="text-red-500">*</span>
-              </Label>
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 ${
-                  isDragging 
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' 
-                    : 'border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900'
-                }`}
-                onClick={() => document.getElementById('file-input')?.click()}
+        {/* Main Card */}
+        <Card className="overflow-hidden border-0 shadow-2xl bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl ring-1 ring-black/5 dark:ring-white/10">
+          
+          {/* Success Overlay */}
+          <AnimatePresence>
+            {status === 'success' && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-20 bg-white/90 dark:bg-zinc-950/90 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm"
               >
-                <input
-                  id="file-input"
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.doc,.docx,.tex"
-                  onChange={handleFileSelect}
-                />
-                <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
-                <p className="text-gray-600 dark:text-gray-300 mb-1">
-                  {file ? (
-                    <span className="font-medium text-gray-900 dark:text-white">{file.name}</span>
-                  ) : (
-                    'Drag and drop your resume here, or click to browse'
+                <motion.div 
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.1, type: "spring" }}
+                  className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6"
+                >
+                  <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-400" />
+                </motion.div>
+                <h3 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2">Application Generated!</h3>
+                <p className="text-zinc-500 dark:text-zinc-400 mb-8 max-w-xs">
+                  Your tailored scholarship application is ready for review.
+                </p>
+                <Button 
+                  onClick={() => {
+                    setStatus('idle');
+                    setFile(null);
+                    setUrl('');
+                  }}
+                  className="h-12 px-8 rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 transition-all"
+                >
+                  Start Another
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <CardContent className="p-8 space-y-8">
+            
+            {/* Error Banner */}
+            <AnimatePresence>
+              {errorMessage && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg text-sm font-medium border border-red-100 dark:border-red-900/50 flex items-center"
+                >
+                  <span className="mr-2">⚠️</span> {errorMessage}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* File Upload Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">
+                Resume
+              </Label>
+              
+              {!file ? (
+                <motion.div
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => document.getElementById('file-input')?.click()}
+                  className={cn(
+                    "relative group cursor-pointer flex flex-col items-center justify-center w-full h-48 rounded-2xl border-2 border-dashed transition-all duration-300",
+                    isDragging 
+                      ? "border-blue-500 bg-blue-50/50 dark:bg-blue-500/10" 
+                      : "border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   )}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Supports PDF, DOC, LaTeX
-                </p>
-              </div>
+                >
+                  <input id="file-input" type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileSelect} />
+                  
+                  <div className="p-4 bg-white dark:bg-zinc-800 rounded-full shadow-lg mb-4 group-hover:scale-110 transition-transform duration-300">
+                    <Upload className="w-6 h-6 text-zinc-600 dark:text-zinc-300" />
+                  </div>
+                  <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                    Click to upload or drag & drop
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    PDF, DOCX (Max 5MB)
+                  </p>
+                </motion.div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="relative w-full p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-4 overflow-hidden">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="truncate">
+                      <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{file.name}</p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={removeFile}
+                    className="text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </motion.div>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="scholarship-url" className="text-base font-medium dark:text-gray-200">
-                Scholarship URL <span className="text-red-500">*</span>
+            {/* URL Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">
+                Scholarship Link
               </Label>
-              <div className="relative">
-                <Link2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <div className="relative group">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors">
+                  <Link2 className="w-5 h-5" />
+                </div>
                 <Input
-                  id="scholarship-url"
                   type="text"
-                  placeholder="https://example.com/scholarship"
+                  placeholder="Paste the scholarship URL here..."
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  className="pl-10 h-12 dark:bg-black dark:border-gray-800 dark:text-white dark:placeholder-gray-400"
+                                    className="pl-10 h-14 bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 dark:text-white rounded-xl text-base transition-all"
                 />
               </div>
             </div>
 
-            <Button
-              onClick={handleContinue}
-              disabled={!file || !url || isLoading}
-              className="w-full h-12 text-base font-medium dark:bg-gray-400 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                'Continue'
-              )}
-            </Button>
+            {/* Action Button */}
+            <div className="pt-2">
+              <Button
+                onClick={handleContinue}
+                disabled={status === 'loading' || !file || !url}
+                className={cn(
+                  "w-full h-14 text-lg font-medium rounded-xl relative overflow-hidden transition-all duration-300",
+                  status === 'loading' 
+                    ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 cursor-not-allowed"
+                    : "bg-zinc-900 text-white hover:bg-zinc-800 hover:shadow-lg hover:-translate-y-0.5 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                )}
+              >
+                {/* Background Gradient Animation on Hover (only when active) */}
+                {status !== 'loading' && (
+                  <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/10 to-transparent -translate-x-[100%] group-hover:animate-shimmer" />
+                )}
+
+                <div className="relative flex items-center justify-center gap-2">
+                  {status === 'loading' ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={loadingStep}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="min-w-[140px] text-left"
+                        >
+                          {loadingStep}
+                        </motion.span>
+                      </AnimatePresence>
+                    </>
+                  ) : (
+                    <>
+                      <span>Generate Application</span>
+                      <Sparkles className="w-5 h-5" />
+                    </>
+                  )}
+                </div>
+              </Button>
+            </div>
+
           </CardContent>
         </Card>
-      </div>
+
+        {/* Footer Trust Badge */}
+        <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8 }}
+            className="mt-8 text-center space-y-2"
+        >
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 flex items-center justify-center gap-2">
+               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"/> 
+               Secure Encryption • AI Model V4.0 • Privacy First
+            </p>
+        </motion.div>
+
+      </motion.div>
     </div>
   );
 }
