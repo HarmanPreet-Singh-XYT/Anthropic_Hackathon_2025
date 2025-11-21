@@ -11,40 +11,6 @@ from .authenticity_filter import AuthenticityFilter
 from .refinement_loop import RefinementLoop
 from .multi_draft_generator import MultiDraftGenerator
 
-# Example usage
-# # Initialize engine
-# engine = DraftingEngine()
-
-# # Full pipeline
-# result = await engine.generate_application_materials(
-#     scholarship_profile=scholarship_profile,
-#     student_kb=vector_db,
-#     strategy="weighted",
-#     word_limit=650
-# )
-
-# # Access results
-# print(result['primary_essay'])
-# print(f"Final score: {result['generation_metadata']['final_critique_score']}/10")
-# print(f"Resume bullets: {len(result['supplementary_materials']['resume_bullets'])}")
-
-# # Quick draft for testing
-# quick_essay = await engine.quick_draft(
-#     scholarship_profile=scholarship_profile,
-#     student_kb=vector_db,
-#     word_limit=500,
-#     skip_refinement=False
-# )
-
-# # Compare strategies
-# comparison = await engine.compare_strategies(
-#     scholarship_profile=scholarship_profile,
-#     student_kb=vector_db,
-#     word_limit=650
-# )
-# for strategy, data in comparison.items():
-#     print(f"{strategy}: {data['authenticity_score']}/10, {data['word_count']} words")
-
 
 class DraftingEngine:
     """
@@ -63,10 +29,12 @@ class DraftingEngine:
     async def generate_application_materials(
         self,
         scholarship_profile: Dict[str, Any],
-        student_kb: Any,  # Vector DB or knowledge base
+        student_kb: Any,
         strategy: Optional[str] = "weighted",
         essay_prompt: Optional[str] = None,
-        word_limit: int = 650
+        word_limit: int = 650,
+        include_latex_resume: bool = True,
+        latex_template_style: str = "modern"
     ) -> Dict[str, Any]:
         """
         Main pipeline: Generate complete application package
@@ -78,7 +46,7 @@ class DraftingEngine:
         4. Style Matching - Align with scholarship's linguistic style
         5. Authenticity Filtering - Ensure human-sounding output
         6. Refinement Loop - Iteratively improve best draft
-        7. Supplementary Materials - Generate resume suggestions, short answers
+        7. Supplementary Materials - Generate resume, LaTeX resume, cover letter, short answers
         
         Args:
             scholarship_profile: Scholarship details and values
@@ -86,6 +54,8 @@ class DraftingEngine:
             strategy: Content selection strategy ("weighted", "diverse", "focused")
             essay_prompt: Optional specific essay prompt
             word_limit: Target word count
+            include_latex_resume: Whether to generate LaTeX resume (default True)
+            latex_template_style: "modern", "classic", or "minimal"
         
         Returns:
             Complete application package with essay and supplementary materials
@@ -131,10 +101,7 @@ class DraftingEngine:
                 style_profile=style_profile,
                 scholarship_name=scholarship_profile.get('name', 'this scholarship')
             )
-            styled_drafts.append({
-                **draft_info,
-                "styled_draft": styled_draft
-            })
+            styled_drafts.append({**draft_info, "styled_draft": styled_draft})
         
         # Stage 5: Authenticity Filtering
         print("  → Stage 5/7: Ensuring authenticity...")
@@ -144,7 +111,6 @@ class DraftingEngine:
                 draft=draft_info['styled_draft']
             )
             
-            # Humanize if needed
             if authenticity_check['score'] < 7.0:
                 print(f"    ⚠️  Draft {draft_info['version']} needs humanization (score: {authenticity_check['score']}/10)")
                 humanized = await self.authenticity_filter.humanize_draft(
@@ -152,8 +118,6 @@ class DraftingEngine:
                     issues=authenticity_check['issues']
                 )
                 final_draft = humanized
-                
-                # Re-check authenticity after humanization
                 recheck = await self.authenticity_filter.check_authenticity(draft=humanized)
                 final_score = recheck['score']
             else:
@@ -170,7 +134,6 @@ class DraftingEngine:
         # Stage 6: Refinement Loop
         print("  → Stage 6/7: Refining best draft...")
         best_draft = max(authenticity_checked, key=lambda x: x['authenticity_score'])
-        
         print(f"    🏆 Selected draft {best_draft['version']} for refinement (authenticity: {best_draft['authenticity_score']}/10)")
         
         refined_result = await self.refinement_loop.refine_draft(
@@ -185,15 +148,20 @@ class DraftingEngine:
         supplementary = await self._generate_supplementary_materials(
             content_selection=content_selection,
             scholarship_profile=scholarship_profile,
-            strategy=strategy
+            strategy=strategy,
+            student_kb=student_kb,
+            include_latex_resume=include_latex_resume,
+            latex_template_style=latex_template_style
         )
         
         print("✅ Drafting Engine Pipeline Complete!")
         
-        # Calculate final word count
         final_word_count = len(refined_result['final_draft'].split())
         word_count_status = "✓" if abs(final_word_count - word_limit) <= 50 else "⚠️"
         print(f"   {word_count_status} Final word count: {final_word_count}/{word_limit}")
+        
+        if include_latex_resume:
+            print(f"   📄 LaTeX resume generated ({latex_template_style} template)")
         
         return {
             "primary_essay": refined_result['final_draft'],
@@ -213,7 +181,9 @@ class DraftingEngine:
                 "best_draft_emphasis": best_draft['emphasis'],
                 "authenticity_score": best_draft['authenticity_score'],
                 "final_critique_score": refined_result.get('improvement_trajectory', {}).get('final_score'),
-                "total_refinement_iterations": refined_result.get('total_iterations', 0)
+                "total_refinement_iterations": refined_result.get('total_iterations', 0),
+                "latex_resume_included": include_latex_resume,
+                "latex_template_style": latex_template_style if include_latex_resume else None
             }
         }
     
@@ -221,15 +191,21 @@ class DraftingEngine:
         self,
         content_selection: Dict[str, Any],
         scholarship_profile: Dict[str, Any],
-        strategy: str
+        strategy: str,
+        student_kb: Any = None,
+        include_latex_resume: bool = True,
+        latex_template_style: str = "modern"
     ) -> Dict[str, Any]:
         """
-        Generate resume bullets, cover letters, and short answers
+        Generate resume bullets, LaTeX resume, cover letters, and short answers
         
         Args:
             content_selection: Selected content from ContentSelector
             scholarship_profile: Scholarship details
             strategy: Content selection strategy used
+            student_kb: Student knowledge base for additional context
+            include_latex_resume: Whether to generate LaTeX resume
+            latex_template_style: Style for LaTeX resume
         
         Returns:
             Dictionary of supplementary materials
@@ -250,10 +226,25 @@ class DraftingEngine:
             )
         }
         
+        # Generate LaTeX resume if requested
+        if include_latex_resume:
+            print("    📝 Generating LaTeX resume...")
+            student_kb_dict = None
+            if student_kb and hasattr(student_kb, 'get_structured_data'):
+                student_kb_dict = {"structured_data": student_kb.get_structured_data()}
+            elif isinstance(student_kb, dict):
+                student_kb_dict = student_kb
+            
+            materials['latex_resume'] = await generator.generate_latex_resume(
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                student_kb=student_kb_dict,
+                template_style=latex_template_style
+            )
+        
         # Add short answers if prompts exist
         short_answer_prompts = scholarship_profile.get('short_answer_prompts')
         if short_answer_prompts:
-            # Check if SupplementaryGenerator has this method
             if hasattr(generator, 'generate_short_answers'):
                 materials['short_answers'] = await generator.generate_short_answers(
                     prompts=short_answer_prompts,
@@ -261,9 +252,7 @@ class DraftingEngine:
                     scholarship_profile=scholarship_profile
                 )
             else:
-                materials['short_answers'] = {
-                    "note": "Short answer generation not yet implemented"
-                }
+                materials['short_answers'] = {"note": "Short answer generation not yet implemented"}
         
         return materials
     
@@ -274,36 +263,22 @@ class DraftingEngine:
         word_limit: int = 650,
         skip_refinement: bool = False
     ) -> str:
-        """
-        Generate a single draft quickly without full pipeline
-        
-        Args:
-            scholarship_profile: Scholarship details
-            student_kb: Student knowledge base
-            word_limit: Target word count
-            skip_refinement: If True, skip the refinement loop
-        
-        Returns:
-            Single essay draft
-        """
+        """Generate a single draft quickly without full pipeline"""
         
         print("⚡ Quick Draft Mode...")
         
-        # Content selection
         content_selection = await self.content_selector.select_content(
             scholarship_profile=scholarship_profile,
             student_kb=student_kb,
             strategy="weighted"
         )
         
-        # Create outline
         outline = await self.narrative_architect.create_outline(
             content_selection=content_selection,
             scholarship_profile=scholarship_profile,
             word_limit=word_limit
         )
         
-        # Generate single draft
         draft_versions = await self.multi_draft_generator.generate_drafts(
             outline=outline,
             content_selection=content_selection,
@@ -313,7 +288,6 @@ class DraftingEngine:
         
         draft = draft_versions[0]['draft']
         
-        # Optional refinement
         if not skip_refinement:
             refined_result = await self.refinement_loop.refine_draft(
                 draft=draft,
@@ -324,8 +298,52 @@ class DraftingEngine:
             draft = refined_result['final_draft']
         
         print(f"✅ Quick draft complete ({len(draft.split())} words)")
-        
         return draft
+    
+    async def generate_latex_resume_only(
+        self,
+        scholarship_profile: Dict[str, Any],
+        student_kb: Any,
+        template_style: str = "modern"
+    ) -> Dict[str, Any]:
+        """
+        Generate only the LaTeX resume without full pipeline
+        
+        Args:
+            scholarship_profile: Scholarship details
+            student_kb: Student knowledge base
+            template_style: "modern", "classic", or "minimal"
+        
+        Returns:
+            LaTeX resume package with code and instructions
+        """
+        
+        print("📄 Generating LaTeX Resume...")
+        
+        content_selection = await self.content_selector.select_content(
+            scholarship_profile=scholarship_profile,
+            student_kb=student_kb,
+            strategy="weighted"
+        )
+        
+        from .supplementary_generator import SupplementaryGenerator
+        generator = SupplementaryGenerator()
+        
+        student_kb_dict = None
+        if student_kb and hasattr(student_kb, 'get_structured_data'):
+            student_kb_dict = {"structured_data": student_kb.get_structured_data()}
+        elif isinstance(student_kb, dict):
+            student_kb_dict = student_kb
+        
+        latex_resume = await generator.generate_latex_resume(
+            content_selection=content_selection,
+            scholarship_profile=scholarship_profile,
+            student_kb=student_kb_dict,
+            template_style=template_style
+        )
+        
+        print(f"✅ LaTeX resume generated ({template_style} template)")
+        return latex_resume
     
     async def compare_strategies(
         self,
@@ -333,17 +351,7 @@ class DraftingEngine:
         student_kb: Any,
         word_limit: int = 650
     ) -> Dict[str, Any]:
-        """
-        Generate drafts using different strategies and compare
-        
-        Args:
-            scholarship_profile: Scholarship details
-            student_kb: Student knowledge base
-            word_limit: Target word count
-        
-        Returns:
-            Comparison of different strategy results
-        """
+        """Generate drafts using different strategies and compare"""
         
         print("🔬 Strategy Comparison Mode...")
         
@@ -372,7 +380,6 @@ class DraftingEngine:
                 num_drafts=1
             )
             
-            # Quick authenticity check
             auth_check = await self.authenticity_filter.check_authenticity(
                 draft=drafts[0]['draft']
             )
@@ -386,9 +393,4 @@ class DraftingEngine:
             }
         
         print("\n✅ Strategy comparison complete!")
-        
         return results
-    
-
-
-
