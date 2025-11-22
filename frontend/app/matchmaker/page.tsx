@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ArrowRight, CheckCircle2, AlertCircle, TrendingUp } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ParticleBackground } from '@/components/ParticleBackground';
 
 // --- Types ---
 interface MatchComponent {
@@ -163,28 +164,38 @@ export default function MatchmakerPage() {
     const StatusIcon = statusConfig.icon;
 
     return (
-        <div className="h-screen bg-[#050505] text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
+        <div className="h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
 
-            {/* Background Stars/Particles */}
-            <div className="absolute inset-0 z-0 pointer-events-none">
-                {[...Array(20)].map((_, i) => (
-                    <div
-                        key={i}
-                        className="absolute rounded-full bg-white opacity-20 animate-pulse"
-                        style={{
-                            top: `${Math.random() * 100}%`,
-                            left: `${Math.random() * 100}%`,
-                            width: `${Math.random() * 3 + 1}px`,
-                            height: `${Math.random() * 3 + 1}px`,
-                            animationDuration: `${Math.random() * 3 + 2}s`,
-                            animationDelay: `${Math.random() * 2}s`
-                        }}
-                    />
-                ))}
+            <ParticleBackground />
 
-                {/* Subtle Glows */}
-                <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-purple-500/5 rounded-full blur-[150px]" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[150px]" />
+            {/* Animated Mesh Gradient Background */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <motion.div
+                    animate={{
+                        x: [0, 200, 0],
+                        y: [0, -150, 0],
+                        scale: [1, 1.2, 1],
+                    }}
+                    transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)',
+                        filter: 'blur(60px)',
+                    }}
+                />
+                <motion.div
+                    animate={{
+                        x: [0, -150, 0],
+                        y: [0, 200, 0],
+                        scale: [1, 1.3, 1],
+                    }}
+                    transition={{ duration: 30, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -bottom-40 -right-40 w-[700px] h-[700px] rounded-full"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 40%, transparent 70%)',
+                        filter: 'blur(70px)',
+                    }}
+                />
             </div>
 
             <div className="relative z-10 w-full max-w-3xl px-6 flex flex-col items-center py-4">

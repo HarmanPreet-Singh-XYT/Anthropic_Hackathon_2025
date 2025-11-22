@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { uploadResume } from '@/lib/api';
+import { ParticleBackground } from '@/components/ParticleBackground';
 
 export default function StartPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -41,17 +41,14 @@ export default function StartPage() {
     };
 
     const validateAndSetFile = (f: File) => {
-        // Clear previous error/success
         setError(null);
         setSuccess(null);
 
-        // Validate file type
         if (!f.name.toLowerCase().endsWith('.pdf')) {
             setError("Only PDF files are supported");
             return;
         }
 
-        // Validate size
         if (f.size > 5 * 1024 * 1024) {
             setError("File is too large. Max 5MB.");
             return;
@@ -80,7 +77,6 @@ export default function StartPage() {
         setSuccess(null);
 
         try {
-            // Create FormData for the workflow endpoint
             const formData = new FormData();
             formData.append('scholarship_url', url);
             if (file) {
@@ -104,10 +100,10 @@ export default function StartPage() {
             // Step 2: Poll for completion
             let completed = false;
             let pollCount = 0;
-            const maxPolls = 60; // 2 minutes timeout (2s interval)
+            const maxPolls = 60;
 
             while (!completed && pollCount < maxPolls) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2s
+                await new Promise(resolve => setTimeout(resolve, 2000));
                 pollCount++;
 
                 const statusResponse = await fetch(
@@ -122,18 +118,15 @@ export default function StartPage() {
                 console.log(`[StartPage] Poll #${pollCount}:`, statusData.status, statusData);
 
                 if (statusData.status === 'processing') {
-                    // Continue polling
                     continue;
-
                 } else if (statusData.status === 'complete' || statusData.status === 'waiting_for_input') {
                     console.log("[StartPage] Workflow reached target state:", statusData.status);
                     completed = true;
                     setSuccess({
                         message: "Analysis complete!",
-                        chunks: 0 // Not relevant for this flow
+                        chunks: 0
                     });
 
-                    // Navigate to results
                     console.log("[StartPage] Navigating to matchmaker...");
                     await new Promise(resolve => setTimeout(resolve, 800));
                     router.push(`/matchmaker?session=${session_id}`);
@@ -156,73 +149,151 @@ export default function StartPage() {
         }
     };
 
-
     return (
-        <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
+        <div className="min-h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
 
-            {/* Background Stars/Particles */}
-            <div className="absolute inset-0 z-0 pointer-events-none">
-                {/* We can use a simple CSS solution or SVG for stars. 
-             For now, let's use some absolute positioned divs with simple animations if needed, 
-             or just a static nice background. 
-             Let's try to mimic the 'stars' from the image with some small dots.
-         */}
-                {[...Array(20)].map((_, i) => (
-                    <div
-                        key={i}
-                        className="absolute rounded-full bg-white opacity-20 animate-pulse"
-                        style={{
-                            top: `${Math.random() * 100}%`,
-                            left: `${Math.random() * 100}%`,
-                            width: `${Math.random() * 3 + 1}px`,
-                            height: `${Math.random() * 3 + 1}px`,
-                            animationDuration: `${Math.random() * 3 + 2}s`,
-                            animationDelay: `${Math.random() * 2}s`
-                        }}
-                    />
-                ))}
+            <ParticleBackground />
 
-                {/* Subtle Glows */}
-                <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-white/5 rounded-full blur-[150px]" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-white/5 rounded-full blur-[150px]" />
+            {/* Animated Mesh Gradient Background */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <motion.div
+                    animate={{
+                        x: [0, 200, 0],
+                        y: [0, -150, 0],
+                        scale: [1, 1.2, 1],
+                    }}
+                    transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)',
+                        filter: 'blur(60px)',
+                    }}
+                />
+                <motion.div
+                    animate={{
+                        x: [0, -150, 0],
+                        y: [0, 200, 0],
+                        scale: [1, 1.3, 1],
+                    }}
+                    transition={{ duration: 30, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -bottom-40 -right-40 w-[700px] h-[700px] rounded-full"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 40%, transparent 70%)',
+                        filter: 'blur(70px)',
+                    }}
+                />
             </div>
 
-            <div className="relative z-10 w-full max-w-2xl px-6 flex flex-col items-center">
+            <div className="relative z-10 w-full max-w-[620px] px-6 flex flex-col items-center">
 
                 {/* Header */}
                 <motion.div
-                    initial={{ opacity: 0, y: -20 }}
+                    initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
-                    className="text-center mb-12"
+                    transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
+                    className="text-center space-y-4 mb-8"
                 >
-                    <div className="inline-flex items-center justify-center mb-6">
-                        <Zap className="w-12 h-12 text-white fill-white" />
+                    {/* Animated icon container */}
+                    <div className="relative inline-block">
+                        <motion.div
+                            animate={{
+                                rotate: 360,
+                                scale: [1, 1.2, 1],
+                            }}
+                            transition={{
+                                rotate: { duration: 20, repeat: Infinity, ease: "linear" },
+                                scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+                            }}
+                            className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-white/20 rounded-full blur-2xl"
+                        />
+                        <motion.div
+                            animate={{
+                                y: [0, -15, 0],
+                                rotate: [0, 10, -10, 0],
+                            }}
+                            transition={{ duration: 4, repeat: Infinity }}
+                            className="relative"
+                        >
+                            <Zap className="h-16 w-16 text-white mx-auto drop-shadow-2xl" fill="white" strokeWidth={1} />
+                        </motion.div>
                     </div>
-                    <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-4">
-                        Scholarship Assistant
-                    </h1>
-                    <p className="text-zinc-500 text-lg font-light tracking-wide">
+
+                    {/* Glowing title */}
+                    <div className="relative">
+                        <motion.h1
+                            className="text-white tracking-tight relative"
+                            style={{
+                                fontSize: '2.75rem',
+                                fontWeight: 200,
+                                letterSpacing: '-0.03em',
+                                textShadow: '0 0 60px rgba(255,255,255,0.3)',
+                            }}
+                            animate={{
+                                textShadow: [
+                                    '0 0 60px rgba(255,255,255,0.3)',
+                                    '0 0 80px rgba(255,255,255,0.5)',
+                                    '0 0 60px rgba(255,255,255,0.3)',
+                                ]
+                            }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                        >
+                            Scholarship Assistant
+                        </motion.h1>
+                    </div>
+                    <motion.p
+                        className="text-gray-400"
+                        animate={{ opacity: [0.6, 1, 0.6] }}
+                        transition={{ duration: 3, repeat: Infinity }}
+                    >
                         Transform your application into success
-                    </p>
+                    </motion.p>
                 </motion.div>
 
-                {/* Main Card */}
+                {/* Main Card with 3D effect */}
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
-                    className="w-full bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-[32px] p-8 md:p-10 shadow-2xl shadow-black/50 relative overflow-hidden group"
+                    initial={{ opacity: 0, y: 50, rotateX: 20 }}
+                    animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                    transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
+                    whileHover={{
+                        y: -5,
+                        transition: { type: "spring", stiffness: 400 }
+                    }}
+                    className="relative w-full"
+                    style={{ perspective: 1000 }}
                 >
-                    {/* Inner Glow */}
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
+                    {/* Rotating gradient border */}
+                    <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                        className="absolute -inset-[2px] rounded-3xl opacity-70"
+                        style={{
+                            background: 'linear-gradient(45deg, rgba(255,255,255,0.3), transparent, rgba(255,255,255,0.3), transparent)',
+                        }}
+                    />
 
-                    <div className="space-y-8">
+                    {/* Glowing background layer */}
+                    <motion.div
+                        animate={{
+                            boxShadow: [
+                                '0 0 40px rgba(255,255,255,0.1)',
+                                '0 0 80px rgba(255,255,255,0.2)',
+                                '0 0 40px rgba(255,255,255,0.1)',
+                            ]
+                        }}
+                        transition={{ duration: 3, repeat: Infinity }}
+                        className="absolute inset-0 rounded-3xl"
+                    />
+
+                    <div className="relative bg-black/70 backdrop-blur-3xl border border-white/20 rounded-3xl p-8 space-y-6">
 
                         {/* Resume Upload */}
                         <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-zinc-400 uppercase">
-                                <div className="w-2 h-2 rounded-full bg-white" />
+                            <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
+                                <motion.div
+                                    animate={{ scale: [1, 1.3, 1] }}
+                                    transition={{ duration: 2, repeat: Infinity }}
+                                    className="w-2 h-2 bg-white rounded-full"
+                                />
                                 Resume Upload
                             </div>
 
@@ -232,17 +303,19 @@ export default function StartPage() {
                                 onDragLeave={handleDragLeave}
                                 onDrop={handleDrop}
                                 className={`
-                  relative h-48 rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-transparent 
-                  flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300
-                  hover:bg-white/10 hover:border-white/20 group/upload
-                  ${isDragging ? 'bg-white/10 border-white/30 scale-[1.02]' : ''}
-                `}
+                                    relative h-48 rounded-2xl border transition-all duration-300 cursor-pointer
+                                    flex flex-col items-center justify-center text-center
+                                    ${isDragging
+                                        ? 'border-white/40 bg-white/10 scale-[1.02]'
+                                        : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
+                                    }
+                                `}
                             >
                                 <input
                                     id="file-upload"
                                     type="file"
                                     className="hidden"
-                                    accept=".pdf,.doc,.docx,.latex"
+                                    accept=".pdf"
                                     onChange={handleFileSelect}
                                 />
 
@@ -255,15 +328,18 @@ export default function StartPage() {
                                             exit={{ opacity: 0 }}
                                             className="flex flex-col items-center gap-4"
                                         >
-                                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover/upload:scale-110 transition-transform duration-500">
-                                                <Upload className="w-5 h-5 text-zinc-400 group-hover/upload:text-white transition-colors" />
-                                            </div>
+                                            <motion.div
+                                                whileHover={{ scale: 1.1 }}
+                                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center"
+                                            >
+                                                <Upload className="w-6 h-6 text-white" />
+                                            </motion.div>
                                             <div className="space-y-1">
-                                                <p className="text-lg font-medium text-zinc-300 group-hover/upload:text-white transition-colors">
+                                                <p className="text-lg font-medium text-white">
                                                     Drop your resume here
                                                 </p>
-                                                <p className="text-sm text-zinc-500">
-                                                    PDF • DOC • DOCX • LaTeX
+                                                <p className="text-sm text-gray-400">
+                                                    PDF files only
                                                 </p>
                                             </div>
                                         </motion.div>
@@ -275,37 +351,38 @@ export default function StartPage() {
                                             exit={{ opacity: 0, scale: 0.9 }}
                                             className="flex flex-col items-center gap-3 z-10"
                                         >
-                                            <div className="w-14 h-14 rounded-2xl bg-white text-black flex items-center justify-center shadow-lg shadow-white/10">
+                                            <div className="w-14 h-14 rounded-2xl bg-white text-black flex items-center justify-center shadow-lg">
                                                 <FileText className="w-7 h-7" />
                                             </div>
                                             <div className="text-center">
                                                 <p className="text-white font-medium truncate max-w-[200px]">{file.name}</p>
-                                                <p className="text-xs text-zinc-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                <p className="text-xs text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                                             </div>
                                             <button
                                                 onClick={removeFile}
-                                                className="mt-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-xs font-medium text-zinc-300 transition-colors flex items-center gap-1.5"
+                                                className="mt-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-xs font-medium text-gray-300 transition-colors flex items-center gap-1.5"
                                             >
                                                 <X className="w-3 h-3" /> Remove
                                             </button>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
-
-                                {/* Shine effect */}
-                                <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover/upload:opacity-100 transition-opacity pointer-events-none" />
                             </div>
                         </div>
 
                         {/* Scholarship URL */}
                         <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-zinc-400 uppercase">
-                                <div className="w-2 h-2 rounded-full bg-white" />
+                            <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
+                                <motion.div
+                                    animate={{ scale: [1, 1.3, 1] }}
+                                    transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
+                                    className="w-2 h-2 bg-white rounded-full"
+                                />
                                 Scholarship URL
                             </div>
 
-                            <div className="relative group/input">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within/input:text-white transition-colors">
+                            <div className="relative group">
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-white transition-colors">
                                     <Link2 className="w-5 h-5" />
                                 </div>
                                 <input
@@ -313,7 +390,7 @@ export default function StartPage() {
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
                                     placeholder="https://example.com/scholarship"
-                                    className="w-full h-14 bg-[#0A0A0A] border border-white/10 rounded-xl pl-12 pr-4 text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-white/30 focus:bg-[#0F0F0F] transition-all"
+                                    className="w-full h-14 bg-black/50 border border-white/20 rounded-xl pl-12 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-white/40 focus:bg-black/70 transition-all"
                                 />
                             </div>
                         </div>
@@ -343,28 +420,26 @@ export default function StartPage() {
                                     className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center gap-3"
                                 >
                                     <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                    <div className="flex-1">
-                                        <p className="text-sm text-green-200 font-medium">{success.message}</p>
-                                        <p className="text-xs text-green-300/70 mt-1">
-                                            {success.chunks} chunks stored in vector database
-                                        </p>
-                                    </div>
+                                    <p className="text-sm text-green-200 font-medium">{success.message}</p>
                                 </motion.div>
                             )}
                         </AnimatePresence>
 
                         {/* Action Button */}
-                        <button
+                        <motion.button
                             onClick={handleSubmit}
                             disabled={(!file && !url) || isSubmitting}
+                            whileHover={(!file && !url) || isSubmitting ? {} : { scale: 1.02 }}
+                            whileTap={(!file && !url) || isSubmitting ? {} : { scale: 0.98 }}
                             className={`
-                w-full h-16 rounded-xl font-medium text-lg transition-all duration-300 flex items-center justify-center gap-2
-                ${(!file && !url)
-                                    ? 'bg-white/5 text-zinc-600 cursor-not-allowed'
+                                w-full h-14 rounded-xl font-medium text-lg transition-all duration-300 
+                                flex items-center justify-center gap-2
+                                ${(!file && !url)
+                                    ? 'bg-white/10 text-gray-600 cursor-not-allowed'
                                     : isSubmitting
-                                        ? 'bg-white/90 text-black cursor-wait'
-                                        : 'bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10'}
-              `}
+                                        ? 'bg-white text-black cursor-wait'
+                                        : 'bg-white text-black hover:bg-gray-100 shadow-lg shadow-white/20'}
+                            `}
                         >
                             {isSubmitting ? (
                                 <>
@@ -373,10 +448,10 @@ export default function StartPage() {
                                 </>
                             ) : (
                                 <>
-                                    Continue to Chat <ArrowRight className="w-5 h-5" />
+                                    Analyze <ArrowRight className="w-5 h-5" />
                                 </>
                             )}
-                        </button>
+                        </motion.button>
 
                     </div>
                 </motion.div>

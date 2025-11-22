@@ -2,8 +2,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Sparkles, Bot, User, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Send, Zap, CheckCircle2, ArrowRight, ChevronDown, Loader2, AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ParticleBackground } from '@/components/ParticleBackground';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 // --- Types ---
 type Message = {
@@ -16,7 +19,7 @@ type Message = {
 type GapProgress = {
     keyword: string;
     weight: number;
-    confidence: number; // 0.0-1.0
+    confidence: number;
     status: 'not_started' | 'in_progress' | 'complete';
     evidenceCollected: string[];
 };
@@ -42,6 +45,9 @@ export default function AIHelpPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const [keywordsExpanded, setKeywordsExpanded] = useState(true);
+    const [resumeExpanded, setResumeExpanded] = useState(true);
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -88,7 +94,6 @@ export default function AIHelpPage() {
                     isComplete: false
                 });
 
-                // Add first question to messages
                 setMessages([{
                     id: '1',
                     role: 'assistant',
@@ -152,7 +157,6 @@ export default function AIHelpPage() {
                 };
             });
 
-            // Add AI response
             const newAiMsg: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
@@ -161,14 +165,12 @@ export default function AIHelpPage() {
             };
             setMessages(prev => [...prev, newAiMsg]);
 
-            // Check if interview is complete
             if (data.is_complete) {
                 await handleCompleteInterview();
             }
 
         } catch (err) {
             console.error('Error sending message:', err);
-            // Show error message
             const errorMsg: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
@@ -199,7 +201,6 @@ export default function AIHelpPage() {
 
             const data = await response.json();
 
-            // Store bridge story for next phase
             localStorage.setItem('bridge_story', data.bridge_story);
             localStorage.setItem('session_id', sessionId || '');
 
@@ -215,10 +216,8 @@ export default function AIHelpPage() {
         if (!sessionId) return;
 
         try {
-            // Resume workflow with empty bridge story to trigger generation
             const formData = new FormData();
             formData.append('session_id', sessionId);
-            // Send empty string or specific skip message
             formData.append('bridge_story', '');
 
             const response = await fetch(`${API_URL}/api/workflow/resume`, {
@@ -236,7 +235,6 @@ export default function AIHelpPage() {
 
         } catch (err) {
             console.error('Error skipping interview:', err);
-            // Fallback navigation
             router.push(`/application?session=${sessionId}`);
         }
     };
@@ -251,7 +249,6 @@ export default function AIHelpPage() {
         }
 
         try {
-            // Resume workflow with bridge story
             const formData = new FormData();
             formData.append('session_id', storedSessionId);
             formData.append('bridge_story', bridgeStory);
@@ -265,18 +262,10 @@ export default function AIHelpPage() {
                 throw new Error('Failed to resume workflow');
             }
 
-            // Navigate to application page
             router.push(`/application?session=${storedSessionId}`);
 
         } catch (err) {
             console.error('Error continuing to application:', err);
-        }
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage();
         }
     };
 
@@ -287,10 +276,10 @@ export default function AIHelpPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
+            <div className="min-h-screen bg-black text-white flex items-center justify-center">
                 <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-zinc-500">Initializing interview...</p>
+                    <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-white" />
+                    <p className="text-gray-400">Initializing interview...</p>
                 </div>
             </div>
         );
@@ -298,16 +287,14 @@ export default function AIHelpPage() {
 
     if (error) {
         return (
-            <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
+            <div className="min-h-screen bg-black text-white flex items-center justify-center">
                 <div className="text-center max-w-md">
-                    <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <span className="text-3xl">⚠️</span>
-                    </div>
+                    <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
                     <h2 className="text-2xl font-medium mb-2">Error</h2>
-                    <p className="text-zinc-400 mb-6">{error}</p>
+                    <p className="text-gray-400 mb-6">{error}</p>
                     <button
                         onClick={() => router.push('/')}
-                        className="px-6 py-2 bg-white text-black rounded-xl hover:bg-zinc-200 transition"
+                        className="px-6 py-2 bg-white text-black rounded-xl hover:bg-gray-200 transition"
                     >
                         Return Home
                     </button>
@@ -317,224 +304,261 @@ export default function AIHelpPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 relative flex flex-col pt-32 pb-10 px-4 md:px-6">
+        <div className="min-h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative">
 
-            {/* Background Effects */}
-            <div className="fixed inset-0 z-0 pointer-events-none">
-                <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-purple-500/5 rounded-full blur-[150px]" />
-                <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[150px]" />
-                {/* Stars */}
-                {[...Array(15)].map((_, i) => (
-                    <div
-                        key={i}
-                        className="absolute rounded-full bg-white opacity-20 animate-pulse"
-                        style={{
-                            top: `${Math.random() * 100}%`,
-                            left: `${Math.random() * 100}%`,
-                            width: `${Math.random() * 2 + 1}px`,
-                            height: `${Math.random() * 2 + 1}px`,
-                            animationDuration: `${Math.random() * 4 + 2}s`,
-                        }}
-                    />
-                ))}
+            <ParticleBackground />
+
+            {/* Animated Mesh Gradient Background */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <motion.div
+                    animate={{
+                        x: [0, 200, 0],
+                        y: [0, -150, 0],
+                        scale: [1, 1.2, 1],
+                    }}
+                    transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)',
+                        filter: 'blur(60px)',
+                    }}
+                />
+                <motion.div
+                    animate={{
+                        x: [0, -150, 0],
+                        y: [0, 200, 0],
+                        scale: [1, 1.3, 1],
+                    }}
+                    transition={{ duration: 30, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -bottom-40 -right-40 w-[700px] h-[700px] rounded-full"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 40%, transparent 70%)',
+                        filter: 'blur(70px)',
+                    }}
+                />
             </div>
 
-            <div className="relative z-10 w-full max-w-7xl mx-auto h-[80vh] flex flex-col">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+            <div className="min-h-[800px] w-full p-6 relative">
+                <div className="max-w-[1150px] mx-auto min-h-full py-8">
+                    <div className="grid grid-cols-3 gap-5 min-h-[700px]">
+                        {/* Chat Section */}
+                        <div className="col-span-2 relative flex flex-col">
+                            {/* Rotating gradient border */}
+                            <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                                className="absolute -inset-[2px] rounded-3xl opacity-50"
+                                style={{
+                                    background: 'linear-gradient(60deg, rgba(255,255,255,0.3), transparent, rgba(255,255,255,0.2), transparent)',
+                                }}
+                            />
 
-                    {/* LEFT COLUMN: CHAT INTERFACE */}
-                    <div className="lg:col-span-8 flex flex-col h-full">
-
-                        {/* Chat Container */}
-                        <div className="flex-1 bg-[#111111]/60 backdrop-blur-xl border border-white/10 rounded-[32px] flex flex-col overflow-hidden shadow-2xl relative">
-
-                            {/* Header */}
-                            <div className="h-20 border-b border-white/5 flex items-center px-8 justify-between bg-white/5">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
-                                    <h2 className="text-xl font-medium tracking-tight">AI Assistant</h2>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-black/20 px-3 py-1 rounded-full border border-white/5">
-                                    <Sparkles className="w-3 h-3 text-purple-400" />
-                                    <span>MODEL: CLAUDE 3.5 SONNET</span>
-                                </div>
-                            </div>
-
-                            {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                {messages.map((msg) => (
+                            <motion.div
+                                initial={{ opacity: 0, x: -30 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.1 }}
+                                whileHover={{ y: -3 }}
+                                className="relative h-full bg-black/50 backdrop-blur-3xl border border-white/20 rounded-3xl p-6 flex flex-col overflow-hidden min-h-[700px]"
+                                style={{ boxShadow: '0 0 60px rgba(255,255,255,0.1)' }}
+                            >
+                                <div className="relative z-10 mb-4 flex items-center gap-3 flex-shrink-0">
                                     <motion.div
-                                        key={msg.id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                                    >
-                                        <div className={`flex max-w-[80%] gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-
-                                            {/* Avatar */}
-                                            <div className={`
-                        w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
-                        ${msg.role === 'assistant' ? 'bg-white/10 text-white' : 'bg-zinc-800 text-zinc-400'}
-                      `}>
-                                                {msg.role === 'assistant' ? <Bot className="w-5 h-5" /> : <User className="w-5 h-5" />}
-                                            </div>
-
-                                            {/* Bubble */}
-                                            <div className={`
-                        p-5 rounded-2xl text-sm leading-relaxed shadow-lg
-                        ${msg.role === 'assistant'
-                                                    ? 'bg-[#1A1A1A] border border-white/5 text-zinc-200 rounded-tl-none'
-                                                    : 'bg-white text-black rounded-tr-none font-medium'}
-                      `}>
-                                                {msg.content}
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                ))}
-
-                                {isTyping && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="flex w-full justify-start"
-                                    >
-                                        <div className="flex max-w-[80%] gap-4">
-                                            <div className="w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center flex-shrink-0">
-                                                <Bot className="w-5 h-5" />
-                                            </div>
-                                            <div className="bg-[#1A1A1A] border border-white/5 p-5 rounded-2xl rounded-tl-none flex gap-1 items-center h-[60px]">
-                                                <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
-                                                <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                                                <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                )}
-                                <div ref={messagesEndRef} />
-                            </div>
-
-                            {/* Input Area */}
-                            <div className="p-6 bg-gradient-to-t from-black/40 to-transparent">
-                                <div className="relative group">
-                                    <textarea
-                                        value={inputValue}
-                                        onChange={(e) => setInputValue(e.target.value)}
-                                        onKeyDown={handleKeyDown}
-                                        placeholder="Type your message..."
-                                        className="w-full bg-[#0A0A0A] border border-white/10 rounded-2xl pl-6 pr-14 py-4 text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-white/20 focus:bg-[#0F0F0F] transition-all resize-none h-[60px] min-h-[60px] max-h-[120px]"
-                                    />
-                                    <button
-                                        onClick={handleSendMessage}
-                                        disabled={!inputValue.trim()}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white text-white hover:text-black rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        <Send className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
-
-                    {/* RIGHT COLUMN: GAP PROGRESS SIDEBAR */}
-                    <div className="lg:col-span-4 flex flex-col gap-6 h-full overflow-y-auto pb-6 scrollbar-hide">
-
-                        {/* Gap Progress Card */}
-                        <div className="bg-[#111111]/60 backdrop-blur-xl border border-white/10 rounded-[32px] p-6 flex-1 flex flex-col relative overflow-hidden">
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-zinc-400 uppercase">
-                                    <div className="w-2 h-2 rounded-full bg-white" />
-                                    Gap Analysis
-                                </div>
-                            </div>
-
-                            <div className="space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10">
-                                {interviewSession?.gaps.map((gap, index) => (
-                                    <motion.div
-                                        key={gap.keyword}
-                                        initial={{ opacity: 0, x: -20 }}
                                         animate={{
-                                            opacity: 1,
-                                            x: 0,
-                                            borderColor: gap.confidence >= 0.75
-                                                ? 'rgba(34, 197, 94, 0.3)'  // green
-                                                : gap.confidence >= 0.4
-                                                    ? 'rgba(234, 179, 8, 0.3)'  // yellow
-                                                    : 'rgba(239, 68, 68, 0.3)'  // red
+                                            scale: [1, 1.1, 1],
+                                            rotate: [0, 5, -5, 0]
                                         }}
-                                        transition={{ duration: 0.5, delay: index * 0.1 }}
-                                        className="p-4 rounded-2xl border bg-white/5"
+                                        transition={{ duration: 3, repeat: Infinity }}
                                     >
-                                        <div className="flex items-start justify-between mb-2">
-                                            <h4 className="font-medium text-sm text-zinc-200">{gap.keyword}</h4>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-zinc-400 tabular-nums">
-                                                    {Math.round(gap.confidence * 100)}%
-                                                </span>
-                                                <div className={`w-2 h-2 rounded-full ${gap.status === 'complete' ? 'bg-green-500' :
-                                                    gap.status === 'in_progress' ? 'bg-yellow-500 animate-pulse' :
-                                                        'bg-red-500'
-                                                    }`} />
-                                            </div>
-                                        </div>
-
-                                        {/* Progress bar */}
-                                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
-                                            <motion.div
-                                                className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${gap.confidence * 100}%` }}
-                                                transition={{ duration: 0.5 }}
-                                            />
-                                        </div>
-
-                                        {/* Weight indicator */}
-                                        <div className="text-xs text-zinc-500">
-                                            Priority: {Math.round(gap.weight * 100)}%
-                                        </div>
-
-                                        {/* Evidence collected */}
-                                        {gap.evidenceCollected.length > 0 && (
-                                            <div className="mt-2 text-xs text-zinc-400">
-                                                ✓ {gap.evidenceCollected.length} point{gap.evidenceCollected.length > 1 ? 's' : ''} collected
-                                            </div>
-                                        )}
+                                        <div className="w-3 h-3 bg-white rounded-full shadow-lg shadow-white/50" />
                                     </motion.div>
-                                ))}
-                            </div>
+                                    <h2 className="text-white text-xl tracking-tight" style={{ fontWeight: 200 }}>
+                                        AI Assistant
+                                    </h2>
+                                </div>
 
-                            {/* Overall Progress */}
-                            {interviewSession && (
-                                <div className="mt-6 pt-6 border-t border-white/10">
-                                    <div className="flex justify-between text-sm mb-2">
-                                        <span className="text-zinc-400">Overall Progress</span>
-                                        <span className="text-white font-medium tabular-nums">
-                                            {Math.round(overallProgress)}%
-                                        </span>
-                                    </div>
-                                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                        <motion.div
-                                            className="h-full bg-gradient-to-r from-green-400 to-blue-500"
-                                            animate={{ width: `${overallProgress}%` }}
-                                            transition={{ duration: 0.5 }}
+                                <div className="relative flex-1 overflow-y-auto space-y-4 mb-4 pr-2 min-h-0">
+                                    <AnimatePresence initial={false}>
+                                        {messages.map((message, index) => (
+                                            <motion.div
+                                                key={message.id}
+                                                initial={{ opacity: 0, y: 20, x: message.role === 'user' ? 20 : -20, scale: 0.95 }}
+                                                animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+                                                transition={{
+                                                    type: "spring",
+                                                    stiffness: 300,
+                                                    damping: 25,
+                                                    delay: index * 0.05
+                                                }}
+                                                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                            >
+                                                <motion.div
+                                                    whileHover={{ scale: 1.01, y: -1 }}
+                                                    className={`relative max-w-[85%] rounded-3xl p-5 ${message.role === 'user'
+                                                        ? 'bg-white text-black'
+                                                        : 'bg-white/5 text-white backdrop-blur-sm border border-white/20'
+                                                        }`}
+                                                    style={{
+                                                        borderRadius: message.role === 'user' ? '24px 24px 4px 24px' : '24px 24px 24px 4px',
+                                                        boxShadow: message.role === 'user'
+                                                            ? '0 8px 32px rgba(255,255,255,0.2)'
+                                                            : '0 4px 20px rgba(0,0,0,0.3)'
+                                                    }}
+                                                >
+                                                    <span className="relative text-sm">{message.content}</span>
+                                                </motion.div>
+                                            </motion.div>
+                                        ))}
+
+                                        {isTyping && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="flex justify-start"
+                                            >
+                                                <div className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-3xl p-5 flex gap-1">
+                                                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
+                                                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                                                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                    <div ref={messagesEndRef} />
+                                </div>
+
+                                <div className="relative flex gap-3 flex-shrink-0">
+                                    <div className="flex-1 relative group">
+                                        <Input
+                                            value={inputValue}
+                                            onChange={(e) => setInputValue(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                                            placeholder="Type your message..."
+                                            className="relative py-6 px-5 bg-white/5 border-white/20 text-white placeholder:text-gray-600 focus:border-white/30 focus:bg-white/10 rounded-full"
                                         />
                                     </div>
 
-                                    {/* Skip button - barely noticeable */}
-                                    <div className="mt-4 text-center">
-                                        <button
-                                            onClick={handleSkipInterview}
-                                            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors duration-300 underline"
-                                        >
-                                            skip interview
-                                        </button>
-                                    </div>
+                                    <Button
+                                        onClick={handleSendMessage}
+                                        disabled={!inputValue.trim()}
+                                        className="h-full px-7 bg-white text-black hover:bg-gray-100 rounded-full disabled:opacity-30"
+                                    >
+                                        <Send className="h-5 w-5" />
+                                    </Button>
                                 </div>
-                            )}
+                            </motion.div>
                         </div>
 
-                    </div>
+                        {/* Context Section - Gap Analysis */}
+                        <div className="space-y-5 flex flex-col min-h-0">
+                            <motion.div
+                                initial={{ opacity: 0, x: 30, rotateY: 20 }}
+                                animate={{ opacity: 1, x: 0, rotateY: 0 }}
+                                transition={{ delay: 0.3 }}
+                                whileHover={{ scale: 1.03, rotateY: -5 }}
+                                className="relative flex-1 flex flex-col min-h-0"
+                                style={{ transformStyle: 'preserve-3d' }}
+                            >
+                                <motion.div
+                                    animate={{ rotate: -360 }}
+                                    transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                                    className="absolute -inset-[2px] rounded-3xl opacity-40"
+                                    style={{
+                                        background: 'linear-gradient(240deg, rgba(255,255,255,0.25), transparent, rgba(255,255,255,0.25))',
+                                    }}
+                                />
 
+                                <div className="relative bg-black/50 backdrop-blur-3xl border border-white/20 rounded-3xl p-5 overflow-hidden flex flex-col min-h-0">
+                                    <button
+                                        onClick={() => setKeywordsExpanded(!keywordsExpanded)}
+                                        className="relative z-10 w-full flex items-center justify-between mb-3 flex-shrink-0"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <motion.div
+                                                animate={{ scale: [1, 1.3, 1] }}
+                                                transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
+                                                className="w-2 h-2 bg-white rounded-full"
+                                            />
+                                            <h3 className="text-white tracking-widest text-xs uppercase">Requirements</h3>
+                                            <span className="px-2 py-1 bg-white/20 text-white text-xs rounded-full backdrop-blur-sm">
+                                                {interviewSession?.gaps.length || 0}
+                                            </span>
+                                        </div>
+                                        <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${keywordsExpanded ? '' : 'rotate-180'}`} />
+                                    </button>
+
+                                    <AnimatePresence>
+                                        {keywordsExpanded && (
+                                            <motion.ul
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: "auto" }}
+                                                exit={{ opacity: 0, height: 0 }}
+                                                transition={{ duration: 0.3 }}
+                                                className="relative z-10 space-y-3 overflow-y-auto flex-1 min-h-0"
+                                            >
+                                                {interviewSession?.gaps.map((gap, index) => (
+                                                    <motion.li
+                                                        key={gap.keyword}
+                                                        initial={{ opacity: 0, x: -20, scale: 0.9 }}
+                                                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                                                        transition={{
+                                                            delay: index * 0.08,
+                                                            type: "spring",
+                                                            stiffness: 300
+                                                        }}
+                                                        className="relative"
+                                                    >
+                                                        <div className="relative bg-gradient-to-r from-white/8 to-white/5 rounded-2xl p-4 border border-white/10 overflow-hidden">
+                                                            <p className="text-white text-sm mb-2">{gap.keyword}</p>
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                                                    <motion.div
+                                                                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
+                                                                        initial={{ width: 0 }}
+                                                                        animate={{ width: `${gap.confidence * 100}%` }}
+                                                                        transition={{ duration: 0.5 }}
+                                                                    />
+                                                                </div>
+                                                                <span className="text-xs text-white tabular-nums">{Math.round(gap.confidence * 100)}%</span>
+                                                            </div>
+                                                            <p className="text-gray-400 text-xs">Priority: {Math.round(gap.weight * 100)}%</p>
+                                                        </div>
+                                                    </motion.li>
+                                                ))}
+                                            </motion.ul>
+                                        )}
+                                    </AnimatePresence>
+
+                                    {/* Overall Progress */}
+                                    {interviewSession && (
+                                        <div className="mt-6 pt-6 border-t border-white/10">
+                                            <div className="flex justify-between text-sm mb-2">
+                                                <span className="text-gray-400">Overall Progress</span>
+                                                <span className="text-white font-medium tabular-nums">
+                                                    {Math.round(overallProgress)}%
+                                                </span>
+                                            </div>
+                                            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                                <motion.div
+                                                    className="h-full bg-gradient-to-r from-green-400 to-blue-500"
+                                                    animate={{ width: `${overallProgress}%` }}
+                                                    transition={{ duration: 0.5 }}
+                                                />
+                                            </div>
+
+                                            <div className="mt-4 text-center">
+                                                <button
+                                                    onClick={handleSkipInterview}
+                                                    className="text-xs text-gray-600 hover:text-gray-400 transition-colors duration-300 underline"
+                                                >
+                                                    skip interview
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -551,22 +575,21 @@ export default function AIHelpPage() {
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.9 }}
-                            className="bg-[#111] border border-white/10 rounded-3xl p-8 max-w-lg w-full"
+                            className="bg-black/90 border border-white/20 rounded-3xl p-8 max-w-lg w-full"
                         >
                             <div className="text-center">
                                 <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <CheckCircle2 className="w-8 h-8 text-green-500" />
                                 </div>
                                 <h2 className="text-2xl font-medium mb-2">Interview Complete!</h2>
-                                <p className="text-zinc-400 mb-6">
+                                <p className="text-gray-400 mb-6">
                                     I've gathered all the information needed to create an amazing application.
                                 </p>
 
-                                {/* Final scores */}
                                 <div className="bg-white/5 rounded-2xl p-4 mb-6 space-y-2">
                                     {interviewSession.gaps.map(gap => (
                                         <div key={gap.keyword} className="flex justify-between text-sm">
-                                            <span className="text-zinc-300">{gap.keyword}</span>
+                                            <span className="text-gray-300">{gap.keyword}</span>
                                             <span className="text-green-400 font-medium tabular-nums">
                                                 {Math.round(gap.confidence * 100)}%
                                             </span>
@@ -574,20 +597,12 @@ export default function AIHelpPage() {
                                     ))}
                                 </div>
 
-                                <div className="flex flex-col gap-3">
-                                    <button
-                                        onClick={handleContinueToApplication}
-                                        className="w-full h-12 bg-white text-black rounded-xl font-medium hover:bg-zinc-200 transition flex items-center justify-center gap-2"
-                                    >
-                                        Continue to Your Application <ArrowRight className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={handleSkipInterview}
-                                        className="w-full h-12 bg-gray-600 text-white rounded-xl font-medium hover:bg-gray-500 transition flex items-center justify-center gap-2"
-                                    >
-                                        Skip Interview
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={handleContinueToApplication}
+                                    className="w-full h-12 bg-white text-black rounded-xl font-medium hover:bg-gray-200 transition flex items-center justify-center gap-2"
+                                >
+                                    Continue to Your Application <ArrowRight className="w-4 h-4" />
+                                </button>
                             </div>
                         </motion.div>
                     </motion.div>
