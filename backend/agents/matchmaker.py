@@ -153,81 +153,110 @@ Example Output:
             else:
                 best_match_score = 0.0
             
-            results[keyword] = {
-                "best_match_score": best_match_score,
-                "matching_chunks": query_result.get("documents", [])[:2],  # Top 2 chunks only
-                "weight": weight
-            }
-            
-            print(f"  → {keyword}: {best_match_score:.0%} match (weight: {weight:.0%})")
-        
-        return results
 
-    def _calculate_overall_score(self, keyword_results: Dict[str, Dict]) -> float:
+    async def query_resume(self, criteria: str) -> Tuple[List[str], float]:
         """
-        Calculate weighted average match score
-        
+        Search resume for evidence of a specific criteria
+
         Args:
-            keyword_results: Results from _query_resume_for_keywords
-            
+            criteria: Scholarship value or requirement
+
         Returns:
-            Overall match score (0.0-1.0)
+            Tuple of (evidence_snippets, max_relevance_score)
+        """
+        # Query vector store
+        results = self.vector_store.query(query_text=criteria, n_results=3)
+        
+        documents = results.get("documents", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+        
+        if not documents:
+            return [], 0.0
+            
+        # Convert distance to similarity score (approximate)
+        # ChromaDB default is L2 distance. Lower is better.
+        # We'll invert it for a 0-1 similarity score.
+        # This is a heuristic; cosine distance would be 0-2.
+        # Assuming L2 on normalized vectors, range is 0-2.
+        # Similarity = 1 - (distance / 2)
+        
+        # Let's use a simple inverse distance heuristic for now
+        # If distance is 0 (perfect match), score is 1.
+        # If distance is large (>1.5), score approaches 0.
+        
+        best_distance = distances[0] if distances else 1.0
+        relevance_score = max(0.0, 1.0 - (best_distance / 2.0))
+        
+        return documents, relevance_score
+
+    async def calculate_match_score(
+        self,
+        weights: Dict[str, float],
+        evidence_scores: Dict[str, float]
+    ) -> float:
+        """
+        Calculate weighted match score
+
+        Args:
+            weights: Criteria weights from Decoder
+            evidence_scores: Relevance scores for each criteria
+
+        Returns:
+            Weighted average score (0.0 - 1.0)
         """
         total_score = 0.0
+        total_weight = 0.0
         
-        for keyword, data in keyword_results.items():
-            match_score = data["best_match_score"]
-            weight = data["weight"]
-            contribution = match_score * weight
-            total_score += contribution
-        
-        return total_score
-
-    def _identify_gaps(self, keyword_results: Dict[str, Dict]) -> List[str]:
-        """
-        Identify keywords with low match scores (gaps to address)
-        
-        Args:
-            keyword_results: Results from _query_resume_for_keywords
+        for category, weight in weights.items():
+            score = evidence_scores.get(category, 0.0)
+            total_score += score * weight
+            total_weight += weight
             
+        if total_weight == 0:
+            return 0.0
+            
+        return total_score / total_weight
+
+    async def identify_gaps(
+        self,
+        weights: Dict[str, float],
+        evidence_scores: Dict[str, float],
+        threshold: float = 0.4
+    ) -> List[str]:
+        """
+        Identify high-value criteria with low evidence
+
+        Args:
+            weights: Criteria weights
+            evidence_scores: Evidence relevance scores
+            threshold: Score below which is considered a gap
+
         Returns:
-            List of keyword names with match scores below gap threshold,
-            sorted by importance (weight) descending
+            List of missing criteria names
         """
         gaps = []
-        
-        # Sort by weight (importance) descending
-        sorted_keywords = sorted(
-            keyword_results.items(),
-            key=lambda x: x[1]["weight"],
-            reverse=True
-        )
-        
-        for keyword, data in sorted_keywords:
-            if data["best_match_score"] < self.gap_threshold:
-                gaps.append(keyword)
-        
+        for category, weight in weights.items():
+            score = evidence_scores.get(category, 0.0)
+            # A gap is significant if it has high weight (>0.1) AND low score
+            if weight > 0.1 and score < threshold:
+                gaps.append(category)
+                
+        # Sort gaps by weight (highest priority first)
+        gaps.sort(key=lambda x: weights.get(x, 0), reverse=True)
         return gaps
 
-    async def run(self, scout_intelligence: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(
+        self,
+        decoder_output: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Execute Matchmaker Agent workflow
-        
+
         Args:
-            scout_intelligence: Full Scout intelligence output
-            
+            decoder_output: Output from Decoder Agent
+
         Returns:
             Dict containing:
-                - match_score: float (0.0-1.0)
-                - trigger_interview: bool (True if score < 0.8)
-                - gaps: List[str] (missing/weak keywords)
-                - weighted_values: Dict[str, float] (generated weights)
-                - keyword_match_details: Dict (full match data for debugging)
-        """
-        print("\n" + "=" * 60)
-        print("🎯 Matchmaker Agent: Starting gap analysis...")
-        print("=" * 60)
-        
         # STEP 1: Generate weighted values
         print("\n[STEP 1] Analyzing scholarship importance weights...")
         weighted_values = await self._generate_weighted_values(scout_intelligence)

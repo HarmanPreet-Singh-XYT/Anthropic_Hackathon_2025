@@ -4,29 +4,27 @@ Generates contextual questions to extract bridge stories when gaps detected
 """
 
 from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
+
+from ..utils.llm_client import LLMClient
+from ..utils.prompt_loader import load_prompt
 
 
 class InterviewerAgent:
     """
-    Responsible for human-in-the-loop interaction:
-    - Generate specific questions based on narrative gaps
-    - Extract authentic student stories
-    - Never hallucinate content
-
-    Output: Contextual question to fill highest-priority gap
+    Agent E: The Interviewer
+    Generates contextual questions to help students uncover missing stories.
     """
 
-    def __init__(self, anthropic_client, prompt_dir: Path):
+    def __init__(self, llm_client: LLMClient):
         """
         Initialize Interviewer Agent
 
         Args:
-            anthropic_client: Anthropic API client
-            prompt_dir: Directory containing prompt templates
+            llm_client: Configured LLMClient instance
         """
-        self.client = anthropic_client
-        self.prompt_dir = prompt_dir
+        self.llm_client = llm_client
         self.system_prompt = self._load_prompt()
 
     def _load_prompt(self) -> str:
@@ -34,32 +32,106 @@ class InterviewerAgent:
         Load interviewer system prompt from prompts/interviewer.md
 
         Returns:
-            System prompt text
+            System prompt text template
         """
-        # TODO: Implement prompt loading from markdown file
-        pass
+        # Similar to Decoder, we return the template name for runtime loading
+        return "interviewer"
 
     async def generate_question(
         self,
-        gaps: list[str],
-        scholarship_weights: Dict[str, float],
-        resume_summary: str
+        resume_summary: str,
+        target_gap: str,
+        gap_weight: float,
+        resume_focus: str = "other areas"
     ) -> str:
         """
-        Generate contextual question to extract bridge story
+        Generate a specific interview question
 
         Args:
-            gaps: Missing keywords from Matchmaker
-            scholarship_weights: Importance of each keyword
-            resume_summary: Summary of student's current resume
+            resume_summary: Brief summary of student's current resume
+            target_gap: The missing value/keyword to ask about
+            gap_weight: Importance of this missing value
+            resume_focus: What the resume currently emphasizes
 
         Returns:
-            Specific question to ask the student
+            Conversational question string
         """
-        # TODO: Implement question generation using interviewer prompt
-        # TODO: Focus on highest-weighted gap
-        # TODO: Make question specific and conversational
-        pass
+        print(f"  → Interviewer generating question for gap: '{target_gap}'...")
+
+        try:
+            # Load and populate the prompt
+            full_prompt = load_prompt(
+                self.system_prompt, 
+                {
+                    "resume_summary": resume_summary,
+                    "target_gap": target_gap,
+                    "gap_weight": f"{gap_weight:.0%}",
+                    "resume_focus": resume_focus
+                }
+            )
+            
+            # Call LLM
+            # The prompt file asks for a single conversational question.
+            system_instruction = "You are a helpful mentor. Generate a single conversational question."
+            
+            response_text = await self.llm_client.call(
+                system_prompt=system_instruction,
+                user_message=full_prompt
+            )
+
+            # Clean up response (remove quotes if present)
+            question = response_text.strip()
+            if question.startswith('"') and question.endswith('"'):
+                question = question[1:-1]
+            
+            print(f"  ✓ Question generated: {question[:50]}...")
+            return question
+
+        except Exception as e:
+            print(f"  ⚠ Question generation failed: {e}")
+            return f"Can you tell me about a time you demonstrated {target_gap}?"
+
+    async def run(
+        self,
+        resume_text: str,
+        gaps: list[str],
+        weights: Dict[str, float]
+    ) -> Dict[str, Any]:
+        """
+        Execute Interviewer Agent workflow
+
+        Args:
+            resume_text: Full resume text (to be summarized)
+            gaps: List of identified gaps
+            weights: Criteria weights
+
+        Returns:
+            Dict containing:
+                - question: str
+                - target_gap: str
+        """
+        if not gaps:
+            return {"question": None, "target_gap": None}
+            
+        # Target the highest weighted gap
+        # Gaps are already sorted by Matchmaker, but let's be safe
+        target_gap = gaps[0]
+        gap_weight = weights.get(target_gap, 0.0)
+        
+        # Simple resume summary (first 500 chars or so for context)
+        # In a real scenario, we might want a better summary from Profiler
+        resume_summary = resume_text[:1000] + "..." if len(resume_text) > 1000 else resume_text
+        
+        question = await self.generate_question(
+            resume_summary=resume_summary,
+            target_gap=target_gap,
+            gap_weight=gap_weight
+        )
+        
+        return {
+            "question": question,
+            "target_gap": target_gap
+        }
 
     def parse_student_response(self, response: str) -> Dict[str, Any]:
         """
@@ -76,9 +148,6 @@ class InterviewerAgent:
         """
         # TODO: Implement response parsing
         # TODO: Extract key story elements
-        pass
-
-    async def run(self, matchmaker_output: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute Interviewer Agent workflow
 

@@ -6,27 +6,24 @@ Drafts scholarship essay using bridge story, weights, and resume context
 from typing import Dict, Any, Optional
 from pathlib import Path
 
+from ..utils.llm_client import LLMClient
+from ..utils.prompt_loader import load_prompt
+
 
 class GhostwriterAgent:
     """
-    Responsible for essay generation:
-    - Use bridge story as narrative hook
-    - Align with scholarship weights and tone
-    - Incorporate relevant resume context
-
-    Output: Full essay draft + strategy note
+    Agent G: The Ghostwriter
+    Drafts scholarship essay using bridge story, weights, and resume context.
     """
 
-    def __init__(self, anthropic_client, prompt_dir: Path):
+    def __init__(self, llm_client: LLMClient):
         """
         Initialize Ghostwriter Agent
 
         Args:
-            anthropic_client: Anthropic API client
-            prompt_dir: Directory containing prompt templates
+            llm_client: Configured LLMClient instance
         """
-        self.client = anthropic_client
-        self.prompt_dir = prompt_dir
+        self.llm_client = llm_client
         self.system_prompt = self._load_prompt()
 
     def _load_prompt(self) -> str:
@@ -34,60 +31,85 @@ class GhostwriterAgent:
         Load ghostwriter system prompt from prompts/ghostwriter.md
 
         Returns:
-            System prompt text
+            System prompt text template
         """
-        # TODO: Implement prompt loading from markdown file
-        pass
+        return "ghostwriter"
 
     async def draft_essay(
         self,
-        bridge_story: Optional[str],
-        scholarship_analysis: Dict[str, Any],
+        scholarship_values: List[str],
+        hidden_weights: Dict[str, float],
+        tone: str,
         resume_context: str,
+        bridge_story: Optional[str] = None,
         word_limit: int = 500
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Generate essay draft
+        Generate essay draft and strategy note
 
         Args:
-            bridge_story: Story from Interviewer (if gaps existed)
-            scholarship_analysis: Weights, tone from Decoder
-            resume_context: Relevant sections from resume
-            word_limit: Maximum words for essay
+            scholarship_values: Primary values
+            hidden_weights: Value weights
+            tone: Required tone
+            resume_context: Relevant resume text
+            bridge_story: Optional story from interview
+            word_limit: Max words
 
         Returns:
-            Full essay draft
+            Dict containing 'essay', 'strategy_note', 'word_count'
         """
-        # TODO: Implement essay generation using ghostwriter prompt
-        # TODO: Use bridge story as hook if available
-        # TODO: Align with tone and weight priorities
-        # TODO: Respect word limit
-        pass
+        print("  → Ghostwriter drafting essay...")
 
-    def generate_strategy_note(
-        self,
-        scholarship_analysis: Dict[str, Any],
-        bridge_story: Optional[str]
-    ) -> str:
-        """
-        Explain why this narrative approach was chosen
+        try:
+            # Format weights for prompt
+            weights_str = ", ".join([f"{k}: {v:.2f}" for k, v in hidden_weights.items()])
+            values_str = ", ".join(scholarship_values)
+            
+            # Load and populate the prompt
+            full_prompt = load_prompt(
+                self.system_prompt, 
+                {
+                    "primary_values": values_str,
+                    "hidden_weights": weights_str,
+                    "tone": tone,
+                    "bridge_story": bridge_story or "No specific bridge story provided. Focus on resume highlights.",
+                    "resume_context": resume_context[:3000],  # Limit context size
+                    "word_limit": word_limit
+                }
+            )
+            
+            # Call LLM
+            system_instruction = "You are an expert essay writer. Output valid JSON only."
+            
+            response_text = await self.llm_client.call(
+                system_prompt=system_instruction,
+                user_message=full_prompt
+            )
 
-        Args:
-            scholarship_analysis: Decoder output
-            bridge_story: Story used (if any)
+            # Parse JSON
+            cleaned_response = response_text.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            
+            result = json.loads(cleaned_response.strip())
+            
+            print(f"  ✓ Essay generated ({result.get('word_count', 0)} words)")
+            return result
 
-        Returns:
-            Strategy explanation for student
-        """
-        # TODO: Implement strategy note generation
-        # TODO: Explain narrative choices
-        # TODO: Connect to scholarship values
-        pass
+        except Exception as e:
+            print(f"  ⚠ Essay generation failed: {e}")
+            return {
+                "essay": "Error generating essay. Please try again.",
+                "strategy_note": f"Generation failed: {str(e)}",
+                "word_count": 0
+            }
 
     async def run(
         self,
         decoder_output: Dict[str, Any],
-        resume_context: str,
+        resume_text: str,
         bridge_story: Optional[str] = None,
         word_limit: int = 500
     ) -> Dict[str, Any]:
@@ -96,19 +118,22 @@ class GhostwriterAgent:
 
         Args:
             decoder_output: Scholarship analysis
-            resume_context: Student's resume information
+            resume_text: Student's resume information
             bridge_story: Story from interview (optional)
             word_limit: Essay length limit
 
         Returns:
-            Dict containing:
-                - essay: Full essay draft
-                - strategy_note: Explanation of narrative approach
-                - word_count: Actual essay length
+            Dict containing essay and strategy
         """
-        # TODO: Implement full Ghostwriter workflow
-        # 1. Draft essay using all inputs
-        # 2. Generate strategy note
-        # 3. Validate word count
-        # 4. Return complete package
-        pass
+        primary_values = decoder_output.get("primary_values", [])
+        hidden_weights = decoder_output.get("hidden_weights", {})
+        tone = decoder_output.get("tone", "Professional")
+        
+        return await self.draft_essay(
+            scholarship_values=primary_values,
+            hidden_weights=hidden_weights,
+            tone=tone,
+            resume_context=resume_text,
+            bridge_story=bridge_story,
+            word_limit=word_limit
+        )

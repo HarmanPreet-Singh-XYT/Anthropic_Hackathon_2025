@@ -1,7 +1,7 @@
 ```mermaid
 graph TD
-    A[User Input] -->|Upload PDF| B(Resume Processor)
-    A -->|Paste URL| C(Scholarship Scout)
+    A[User Input] -->|Upload PDF| B(Agent B: Profiler)
+    A -->|Paste URL| C(Agent A: Scout)
     
     %% Parallel Processes
     subgraph "Parallel Ingestion"
@@ -10,19 +10,24 @@ graph TD
     end
     
     %% Analysis
-    E -->|LLM Analysis| F[The Decoder]
-    F -->|Extract Weights & Keywords| G{Criteria vs. Resume Check}
+    E -->|LLM Analysis| F[Agent C: Decoder]
+    F -->|Extract Weights & Keywords| G{Agent D: Matchmaker}
     D --> G
     
     %% The Critical Innovation Step
-    G -->|Identify Missing Evidence| H[The Interviewer Agent]
+    G -->|Identify Missing Evidence| H[Agent E: Interviewer]
     H -->|Ask User: 'Tell me a story about specific Keyword'| I[User Inputs New Story]
     
     %% Generation
-    I -->|New Story + Resume Context| J[The Strategist]
-    J --> K[Drafting Engine]
+    subgraph "Agent G: Ghostwriter (Drafting Engine)"
+    I -->|New Story + Resume Context| J[Narrative Architect]
+    J --> K[Multi-Draft Generator]
+    end
+
+    %% Resume Optimization
+    I -->|Resume Context| L[Agent F: Optimizer]
     
     %% Final Outputs
-    K --> L[Output 1: Tailored Resume Suggestions]
-    K --> M[Output 2: Adaptive Scholarship Essay]
+    L --> M[Output 1: Tailored Resume Suggestions]
+    K --> N[Output 2: Adaptive Scholarship Essay]
 ```

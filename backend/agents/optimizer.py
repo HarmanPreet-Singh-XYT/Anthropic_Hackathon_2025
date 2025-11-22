@@ -6,27 +6,24 @@ Rewrites resume bullets using scholarship vocabulary
 from typing import Dict, Any, List
 from pathlib import Path
 
+from ..utils.llm_client import LLMClient
+from ..utils.prompt_loader import load_prompt
+
 
 class OptimizerAgent:
     """
-    Responsible for resume optimization:
-    - Identify 3 key bullets to rewrite
-    - Use scholarship vocabulary and values
-    - Provide before/after with explanations
-
-    Output: Resume optimization suggestions with rationale
+    Agent F: The Optimizer
+    Rewrites resume bullets to align with scholarship vocabulary and values.
     """
 
-    def __init__(self, anthropic_client, prompt_dir: Path):
+    def __init__(self, llm_client: LLMClient):
         """
         Initialize Optimizer Agent
 
         Args:
-            anthropic_client: Anthropic API client
-            prompt_dir: Directory containing prompt templates
+            llm_client: Configured LLMClient instance
         """
-        self.client = anthropic_client
-        self.prompt_dir = prompt_dir
+        self.llm_client = llm_client
         self.system_prompt = self._load_prompt()
 
     def _load_prompt(self) -> str:
@@ -34,52 +31,70 @@ class OptimizerAgent:
         Load optimizer system prompt from prompts/optimizer.md
 
         Returns:
-            System prompt text
+            System prompt text template
         """
-        # TODO: Implement prompt loading from markdown file
-        pass
-
-    async def identify_target_bullets(
-        self,
-        resume_text: str,
-        scholarship_keywords: List[str]
-    ) -> List[str]:
-        """
-        Identify which resume bullets to optimize
-
-        Args:
-            resume_text: Full resume text
-            scholarship_keywords: Primary values from Decoder
-
-        Returns:
-            List of 3 original bullet points to rewrite
-        """
-        # TODO: Implement bullet identification logic
-        # TODO: Find bullets most relevant to scholarship
-        pass
+        return "optimizer"
 
     async def optimize_bullets(
         self,
-        original_bullets: List[str],
-        scholarship_values: Dict[str, Any]
-    ) -> List[Dict[str, str]]:
+        student_experiences: str,
+        scholarship_values: List[str],
+        weighted_priorities: Dict[str, float],
+        tone: str
+    ) -> List[Dict[str, Any]]:
         """
-        Rewrite bullets using scholarship vocabulary
+        Generate optimized resume bullets
 
         Args:
-            original_bullets: Original resume bullets
-            scholarship_values: Keywords, weights, tone from Decoder
+            student_experiences: Relevant resume sections or text
+            scholarship_values: List of primary values
+            weighted_priorities: Dict of value weights
+            tone: Desired tone description
 
         Returns:
-            List of dicts with:
-                - original: Original bullet text
-                - optimized: Rewritten version
-                - rationale: Why this change aligns with scholarship
+            List of optimized bullet objects
         """
-        # TODO: Implement bullet optimization using LLM
-        # TODO: Ensure vocabulary alignment
-        # TODO: Maintain truthfulness (no fabrication)
-        pass
+        print("  → Optimizer rewriting bullets...")
+
+        try:
+            # Format weights for prompt
+            weights_str = ", ".join([f"{k}: {v:.2f}" for k, v in weighted_priorities.items()])
+            values_str = ", ".join(scholarship_values)
+
+            # Load and populate the prompt
+            full_prompt = load_prompt(
+                self.system_prompt, 
+                {
+                    "student_experiences": student_experiences,
+                    "scholarship_values": values_str,
+                    "weighted_priorities": weights_str,
+                    "tone": tone
+                }
+            )
+            
+            # Call LLM
+            system_instruction = "You are a resume expert. Output valid JSON array only."
+            
+            response_text = await self.llm_client.call(
+                system_prompt=system_instruction,
+                user_message=full_prompt
+            )
+
+            # Parse JSON
+            cleaned_response = response_text.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            
+            optimizations = json.loads(cleaned_response.strip())
+            
+            print(f"  ✓ Generated {len(optimizations)} optimized bullets")
+            return optimizations
+
+        except Exception as e:
+            print(f"  ⚠ Optimization failed: {e}")
+            return []
 
     async def run(
         self,
