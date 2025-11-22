@@ -4,7 +4,7 @@ RAG comparison between resume and scholarship values with decision gate
 """
 
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 
 class MatchmakerAgent:
@@ -152,7 +152,19 @@ Example Output:
                 best_match_score = 1.0 / (1.0 + best_distance)
             else:
                 best_match_score = 0.0
-            
+
+            # Extract matching text chunks
+            matching_chunks = query_result.get("documents", [[]])[0] if query_result.get("documents") else []
+
+            results[keyword] = {
+                "best_match_score": best_match_score,
+                "matching_chunks": matching_chunks,
+                "weight": weight
+            }
+
+            print(f"  → {keyword} (weight: {weight:.0%}): match score = {best_match_score:.2f}")
+
+        return results
 
     async def query_resume(self, criteria: str) -> Tuple[List[str], float]:
         """
@@ -245,18 +257,72 @@ Example Output:
         gaps.sort(key=lambda x: weights.get(x, 0), reverse=True)
         return gaps
 
+    def _calculate_overall_score(self, keyword_results: Dict[str, Dict]) -> float:
+        """
+        Calculate weighted overall match score
+
+        Args:
+            keyword_results: Results from _query_resume_for_keywords
+
+        Returns:
+            Overall weighted match score (0-1)
+        """
+        total_weighted_score = 0.0
+        total_weight = 0.0
+
+        for keyword, data in keyword_results.items():
+            score = data["best_match_score"]
+            weight = data["weight"]
+            total_weighted_score += score * weight
+            total_weight += weight
+
+        if total_weight == 0:
+            return 0.0
+
+        return total_weighted_score / total_weight
+
+    def _identify_gaps(self, keyword_results: Dict[str, Dict]) -> List[str]:
+        """
+        Identify keywords with low match scores relative to their importance
+
+        Args:
+            keyword_results: Results from _query_resume_for_keywords
+
+        Returns:
+            List of keywords that are gaps (high importance, low match)
+        """
+        gaps = []
+
+        for keyword, data in keyword_results.items():
+            score = data["best_match_score"]
+            weight = data["weight"]
+
+            # Gap if high weight (>10% importance) but low score (<threshold)
+            if weight > 0.1 and score < self.gap_threshold:
+                gaps.append(keyword)
+
+        # Sort by importance (weight)
+        gaps.sort(key=lambda k: keyword_results[k]["weight"], reverse=True)
+        return gaps
+
     async def run(
         self,
-        decoder_output: Dict[str, Any]
+        scout_intelligence: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Execute Matchmaker Agent workflow
 
         Args:
-            decoder_output: Output from Decoder Agent
+            scout_intelligence: Output from Scout Agent
 
         Returns:
             Dict containing:
+                - match_score: float (0-1 overall match)
+                - trigger_interview: bool
+                - gaps: List[str] (missing criteria)
+                - weighted_values: Dict[str, float]
+                - keyword_match_details: Dict
+        """
         # STEP 1: Generate weighted values
         print("\n[STEP 1] Analyzing scholarship importance weights...")
         weighted_values = await self._generate_weighted_values(scout_intelligence)

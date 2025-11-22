@@ -3,8 +3,11 @@ Agent C: The Decoder
 Analyzes scholarship intelligence to extract weighted keyword map
 """
 
+import json
 from typing import Dict, Any, List
 from pathlib import Path
+from backend.utils.llm_client import LLMClient
+from backend.utils.prompt_loader import load_prompt
 
 
 class DecoderAgent:
@@ -118,4 +121,9 @@ class DecoderAgent:
         Execute Decoder Agent workflow
 
         Args:
-        pass
+            scholarship_text: Combined scholarship text to analyze
+
+        Returns:
+            Analysis dict with primary_values, hidden_weights, tone, missing_evidence_query
+        """
+        return await self.analyze_scholarship(scholarship_text)
