@@ -15,7 +15,7 @@ class LLMClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = "claude-sonnet-4-20250514",
         temperature: float = 0.7,
         max_tokens: int = 4096
     ):
@@ -81,7 +81,7 @@ class LLMClient:
 
 def create_llm_client(
     api_key: Optional[str] = None,
-    model: str = "claude-3-5-sonnet-20241022",
+    model: str = "claude-sonnet-4-20250514",
     temperature: float = 0.7
 ) -> LLMClient:
     """

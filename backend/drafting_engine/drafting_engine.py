@@ -4,6 +4,7 @@ Core Drafting Engine - Orchestrates all drafting components to generate tailored
 """
 
 from typing import Dict, List, Optional, Any
+import traceback
 from .content_selector import ContentSelector
 from .narrative_architect import NarrativeArchitect
 from .style_matcher import StyleMatcher
@@ -61,113 +62,216 @@ class DraftingEngine:
             Complete application package with essay and supplementary materials
         """
         
-        print("🎯 Starting Drafting Engine Pipeline...")
+        print("\n" + "="*80)
+        print("🎯 DRAFTING ENGINE PIPELINE")
+        print("="*80)
+        print(f"Scholarship: {scholarship_profile.get('name', 'Unknown')}")
+        print(f"Strategy: {strategy}")
+        print(f"Word Limit: {word_limit}")
+        print(f"LaTeX Resume: {'Yes' if include_latex_resume else 'No'}")
+        print("="*80 + "\n")
+        
+        pipeline_errors = []
+        warnings = []
         
         # Stage 1: Content Selection
-        print("  → Stage 1/7: Selecting optimal content...")
-        content_selection = await self.content_selector.select_content(
-            scholarship_profile=scholarship_profile,
-            student_kb=student_kb,
-            strategy=strategy
-        )
+        try:
+            print("  → Stage 1/7: Selecting optimal content...")
+            content_selection = await self.content_selector.select_content(
+                scholarship_profile=scholarship_profile,
+                student_kb=student_kb,
+                strategy=strategy
+            )
+            print("    ✅ Content selection complete")
+        except Exception as e:
+            error_msg = f"Content selection failed: {str(e)}"
+            print(f"    ❌ {error_msg}")
+            pipeline_errors.append({"stage": 1, "error": error_msg})
+            # Return early with error
+            return self._create_error_response(pipeline_errors, scholarship_profile)
         
         # Stage 2: Narrative Architecture
-        print("  → Stage 2/7: Architecting narrative structure...")
-        outline = await self.narrative_architect.create_outline(
-            content_selection=content_selection,
-            scholarship_profile=scholarship_profile,
-            word_limit=word_limit
-        )
+        try:
+            print("  → Stage 2/7: Architecting narrative structure...")
+            outline = await self.narrative_architect.create_outline(
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                word_limit=word_limit
+            )
+            print("    ✅ Narrative architecture complete")
+        except Exception as e:
+            error_msg = f"Narrative architecture failed: {str(e)}"
+            print(f"    ❌ {error_msg}")
+            pipeline_errors.append({"stage": 2, "error": error_msg})
+            return self._create_error_response(pipeline_errors, scholarship_profile)
         
         # Stage 3: Multi-Draft Generation
-        print("  → Stage 3/7: Generating draft variations...")
-        draft_versions = await self.multi_draft_generator.generate_drafts(
-            outline=outline,
-            content_selection=content_selection,
-            scholarship_profile=scholarship_profile,
-            num_drafts=3
-        )
+        try:
+            print("  → Stage 3/7: Generating draft variations...")
+            draft_versions = await self.multi_draft_generator.generate_drafts(
+                outline=outline,
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                num_drafts=3
+            )
+            print("    ✅ Draft generation complete")
+        except Exception as e:
+            error_msg = f"Draft generation failed: {str(e)}"
+            print(f"    ❌ {error_msg}")
+            pipeline_errors.append({"stage": 3, "error": error_msg})
+            return self._create_error_response(pipeline_errors, scholarship_profile)
         
         # Stage 4: Style Matching
-        print("  → Stage 4/7: Matching scholarship style...")
-        style_profile = await self.style_matcher.analyze_scholarship_style(
-            scholarship_profile=scholarship_profile
-        )
-        
-        styled_drafts = []
-        for draft_info in draft_versions:
-            styled_draft = await self.style_matcher.adjust_draft_style(
-                draft=draft_info['draft'],
-                style_profile=style_profile,
-                scholarship_name=scholarship_profile.get('name', 'this scholarship')
+        try:
+            print("  → Stage 4/7: Matching scholarship style...")
+            style_profile = await self.style_matcher.analyze_scholarship_style(
+                scholarship_profile=scholarship_profile
             )
-            styled_drafts.append({**draft_info, "styled_draft": styled_draft})
+            
+            styled_drafts = []
+            for i, draft_info in enumerate(draft_versions, 1):
+                try:
+                    styled_draft = await self.style_matcher.adjust_draft_style(
+                        draft=draft_info['draft'],
+                        style_profile=style_profile,
+                        scholarship_name=scholarship_profile.get('name', 'this scholarship')
+                    )
+                    styled_drafts.append({**draft_info, "styled_draft": styled_draft})
+                except Exception as e:
+                    warning = f"Style matching failed for draft {i}, using original"
+                    print(f"    ⚠️  {warning}")
+                    warnings.append(warning)
+                    styled_drafts.append({**draft_info, "styled_draft": draft_info['draft']})
+            
+            print("    ✅ Style matching complete")
+        except Exception as e:
+            error_msg = f"Style matching failed: {str(e)}"
+            print(f"    ⚠️  {error_msg} - Using original drafts")
+            warnings.append(error_msg)
+            styled_drafts = [{**d, "styled_draft": d['draft']} for d in draft_versions]
+            style_profile = {"tone": "professional", "note": "Default style used"}
         
         # Stage 5: Authenticity Filtering
-        print("  → Stage 5/7: Ensuring authenticity...")
-        authenticity_checked = []
-        for draft_info in styled_drafts:
-            authenticity_check = await self.authenticity_filter.check_authenticity(
-                draft=draft_info['styled_draft']
-            )
+        try:
+            print("  → Stage 5/7: Ensuring authenticity...")
+            authenticity_checked = []
+            for draft_info in styled_drafts:
+                try:
+                    authenticity_check = await self.authenticity_filter.check_authenticity(
+                        draft=draft_info['styled_draft']
+                    )
+                    
+                    if authenticity_check['score'] < 7.0:
+                        print(f"    ⚠️  Draft {draft_info['version']} needs humanization (score: {authenticity_check['score']:.1f}/10)")
+                        try:
+                            humanized = await self.authenticity_filter.humanize_draft(
+                                draft=draft_info['styled_draft'],
+                                issues=authenticity_check
+                            )
+                            final_draft = humanized
+                            recheck = await self.authenticity_filter.check_authenticity(draft=humanized)
+                            final_score = recheck['score']
+                            print(f"       After humanization: {final_score:.1f}/10")
+                        except Exception as e:
+                            print(f"       Humanization failed, using original")
+                            final_draft = draft_info['styled_draft']
+                            final_score = authenticity_check['score']
+                    else:
+                        print(f"    ✓ Draft {draft_info['version']} authentic (score: {authenticity_check['score']:.1f}/10)")
+                        final_draft = draft_info['styled_draft']
+                        final_score = authenticity_check['score']
+                    
+                    authenticity_checked.append({
+                        **draft_info,
+                        "final_draft": final_draft,
+                        "authenticity_score": final_score,
+                        "authenticity_check": authenticity_check
+                    })
+                except Exception as e:
+                    print(f"    ⚠️  Authenticity check failed for draft {draft_info['version']}")
+                    authenticity_checked.append({
+                        **draft_info,
+                        "final_draft": draft_info['styled_draft'],
+                        "authenticity_score": 7.0,
+                        "authenticity_check": {"score": 7.0, "note": "Default score"}
+                    })
             
-            if authenticity_check['score'] < 7.0:
-                print(f"    ⚠️  Draft {draft_info['version']} needs humanization (score: {authenticity_check['score']}/10)")
-                humanized = await self.authenticity_filter.humanize_draft(
-                    draft=draft_info['styled_draft'],
-                    issues=authenticity_check['issues']
-                )
-                final_draft = humanized
-                recheck = await self.authenticity_filter.check_authenticity(draft=humanized)
-                final_score = recheck['score']
-            else:
-                final_draft = draft_info['styled_draft']
-                final_score = authenticity_check['score']
-            
-            authenticity_checked.append({
-                **draft_info,
-                "final_draft": final_draft,
-                "authenticity_score": final_score,
-                "authenticity_check": authenticity_check
-            })
+            print("    ✅ Authenticity filtering complete")
+        except Exception as e:
+            error_msg = f"Authenticity filtering failed: {str(e)}"
+            print(f"    ⚠️  {error_msg}")
+            warnings.append(error_msg)
+            authenticity_checked = styled_drafts
         
         # Stage 6: Refinement Loop
-        print("  → Stage 6/7: Refining best draft...")
-        best_draft = max(authenticity_checked, key=lambda x: x['authenticity_score'])
-        print(f"    🏆 Selected draft {best_draft['version']} for refinement (authenticity: {best_draft['authenticity_score']}/10)")
-        
-        refined_result = await self.refinement_loop.refine_draft(
-            draft=best_draft['final_draft'],
-            scholarship_profile=scholarship_profile,
-            max_iterations=3,
-            target_score=8.5
-        )
+        try:
+            print("  → Stage 6/7: Refining best draft...")
+            if authenticity_checked:
+                best_draft = max(authenticity_checked, key=lambda x: x.get('authenticity_score', 0))
+                print(f"    🏆 Selected draft {best_draft['version']} for refinement (authenticity: {best_draft.get('authenticity_score', 0):.1f}/10)")
+                
+                refined_result = await self.refinement_loop.refine_draft(
+                    draft=best_draft.get('final_draft', best_draft.get('styled_draft', best_draft.get('draft', ''))),
+                    scholarship_profile=scholarship_profile,
+                    max_iterations=3,
+                    target_score=8.5
+                )
+                print("    ✅ Refinement complete")
+            else:
+                raise ValueError("No drafts available for refinement")
+        except Exception as e:
+            error_msg = f"Refinement failed: {str(e)}"
+            print(f"    ⚠️  {error_msg} - Using best unrefined draft")
+            warnings.append(error_msg)
+            best_draft = authenticity_checked[0] if authenticity_checked else styled_drafts[0]
+            refined_result = {
+                'final_draft': best_draft.get('final_draft', best_draft.get('styled_draft', best_draft.get('draft', ''))),
+                'iterations': [],
+                'improvement_trajectory': {'final_score': 7.0},
+                'total_iterations': 0
+            }
         
         # Stage 7: Supplementary Materials
-        print("  → Stage 7/7: Generating supplementary materials...")
-        supplementary = await self._generate_supplementary_materials(
-            content_selection=content_selection,
-            scholarship_profile=scholarship_profile,
-            strategy=strategy,
-            student_kb=student_kb,
-            include_latex_resume=include_latex_resume,
-            latex_template_style=latex_template_style
-        )
+        try:
+            print("  → Stage 7/7: Generating supplementary materials...")
+            supplementary = await self._generate_supplementary_materials(
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                strategy=strategy,
+                student_kb=student_kb,
+                include_latex_resume=include_latex_resume,
+                latex_template_style=latex_template_style
+            )
+            print("    ✅ Supplementary materials complete")
+        except Exception as e:
+            error_msg = f"Supplementary materials generation failed: {str(e)}"
+            print(f"    ⚠️  {error_msg}")
+            warnings.append(error_msg)
+            supplementary = {"note": "Supplementary materials unavailable", "error": str(e)}
         
-        print("✅ Drafting Engine Pipeline Complete!")
+        # Final output
+        print("\n" + "="*80)
+        print("✅ DRAFTING ENGINE PIPELINE COMPLETE")
+        print("="*80)
         
         final_word_count = len(refined_result['final_draft'].split())
         word_count_status = "✓" if abs(final_word_count - word_limit) <= 50 else "⚠️"
         print(f"   {word_count_status} Final word count: {final_word_count}/{word_limit}")
         
-        if include_latex_resume:
-            print(f"   📄 LaTeX resume generated ({latex_template_style} template)")
+        if include_latex_resume and 'latex_resume' in supplementary:
+            print(f"   📄 LaTeX resume: Generated ({latex_template_style} template)")
+        
+        if warnings:
+            print(f"   ⚠️  {len(warnings)} warnings during generation")
+        
+        print("="*80 + "\n")
         
         return {
+            "success": True,
             "primary_essay": refined_result['final_draft'],
             "alternative_versions": authenticity_checked,
-            "refinement_history": refined_result['iterations'],
-            "improvement_metrics": refined_result['improvement_trajectory'],
+            "refinement_history": refined_result.get('iterations', []),
+            "improvement_metrics": refined_result.get('improvement_trajectory', {}),
             "supplementary_materials": supplementary,
             "generation_metadata": {
                 "narrative_style": outline.get('narrative_style'),
@@ -177,13 +281,37 @@ class DraftingEngine:
                 "word_count": final_word_count,
                 "target_word_count": word_limit,
                 "word_count_variance": final_word_count - word_limit,
-                "best_draft_version": best_draft['version'],
-                "best_draft_emphasis": best_draft['emphasis'],
-                "authenticity_score": best_draft['authenticity_score'],
+                "best_draft_version": best_draft.get('version', 1),
+                "best_draft_emphasis": best_draft.get('emphasis', 'balanced'),
+                "authenticity_score": best_draft.get('authenticity_score', 7.0),
                 "final_critique_score": refined_result.get('improvement_trajectory', {}).get('final_score'),
                 "total_refinement_iterations": refined_result.get('total_iterations', 0),
                 "latex_resume_included": include_latex_resume,
-                "latex_template_style": latex_template_style if include_latex_resume else None
+                "latex_template_style": latex_template_style if include_latex_resume else None,
+                "warnings": warnings,
+                "pipeline_status": "completed_with_warnings" if warnings else "completed_successfully"
+            }
+        }
+    
+    def _create_error_response(
+        self,
+        errors: List[Dict[str, Any]],
+        scholarship_profile: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create error response when pipeline fails early"""
+        return {
+            "success": False,
+            "error": "Pipeline failed",
+            "errors": errors,
+            "primary_essay": "[Essay generation failed. Please try again or contact support.]",
+            "alternative_versions": [],
+            "refinement_history": [],
+            "improvement_metrics": {},
+            "supplementary_materials": {},
+            "generation_metadata": {
+                "scholarship_name": scholarship_profile.get('name', 'Unknown'),
+                "pipeline_status": "failed",
+                "errors": errors
             }
         }
     
@@ -214,45 +342,60 @@ class DraftingEngine:
         from .supplementary_generator import SupplementaryGenerator
         
         generator = SupplementaryGenerator()
+        materials = {}
         
-        materials = {
-            "resume_bullets": await generator.generate_resume_bullets(
-                content_selection=content_selection,
-                scholarship_profile=scholarship_profile
-            ),
-            "cover_letter_template": await generator.generate_cover_letter(
+        # Resume bullets
+        try:
+            materials["resume_bullets"] = await generator.generate_resume_bullets(
                 content_selection=content_selection,
                 scholarship_profile=scholarship_profile
             )
-        }
+        except Exception as e:
+            print(f"       ⚠️  Resume bullets failed: {e}")
+            materials["resume_bullets"] = []
         
-        # Generate LaTeX resume if requested
+        # Cover letter
+        try:
+            materials["cover_letter_template"] = await generator.generate_cover_letter(
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile
+            )
+        except Exception as e:
+            print(f"       ⚠️  Cover letter failed: {e}")
+            materials["cover_letter_template"] = "[Cover letter template unavailable]"
+        
+        # LaTeX resume
         if include_latex_resume:
-            print("    📝 Generating LaTeX resume...")
-            student_kb_dict = None
-            if student_kb and hasattr(student_kb, 'get_structured_data'):
-                student_kb_dict = {"structured_data": student_kb.get_structured_data()}
-            elif isinstance(student_kb, dict):
-                student_kb_dict = student_kb
-            
-            materials['latex_resume'] = await generator.generate_latex_resume(
-                content_selection=content_selection,
-                scholarship_profile=scholarship_profile,
-                student_kb=student_kb_dict,
-                template_style=latex_template_style
-            )
+            try:
+                print("    📝 Generating LaTeX resume...")
+                student_kb_dict = None
+                if student_kb and hasattr(student_kb, 'get_structured_data'):
+                    student_kb_dict = {"structured_data": student_kb.get_structured_data()}
+                elif isinstance(student_kb, dict):
+                    student_kb_dict = student_kb
+                
+                materials['latex_resume'] = await generator.generate_latex_resume(
+                    content_selection=content_selection,
+                    scholarship_profile=scholarship_profile,
+                    student_kb=student_kb_dict,
+                    template_style=latex_template_style
+                )
+            except Exception as e:
+                print(f"       ⚠️  LaTeX resume failed: {e}")
+                materials['latex_resume'] = {"error": str(e), "latex_code": "% LaTeX generation failed"}
         
-        # Add short answers if prompts exist
+        # Short answers
         short_answer_prompts = scholarship_profile.get('short_answer_prompts')
         if short_answer_prompts:
-            if hasattr(generator, 'generate_short_answers'):
+            try:
                 materials['short_answers'] = await generator.generate_short_answers(
                     prompts=short_answer_prompts,
                     content_selection=content_selection,
                     scholarship_profile=scholarship_profile
                 )
-            else:
-                materials['short_answers'] = {"note": "Short answer generation not yet implemented"}
+            except Exception as e:
+                print(f"       ⚠️  Short answers failed: {e}")
+                materials['short_answers'] = {"error": str(e)}
         
         return materials
     
@@ -265,40 +408,49 @@ class DraftingEngine:
     ) -> str:
         """Generate a single draft quickly without full pipeline"""
         
-        print("⚡ Quick Draft Mode...")
+        print("\n⚡ QUICK DRAFT MODE")
+        print("="*80)
         
-        content_selection = await self.content_selector.select_content(
-            scholarship_profile=scholarship_profile,
-            student_kb=student_kb,
-            strategy="weighted"
-        )
-        
-        outline = await self.narrative_architect.create_outline(
-            content_selection=content_selection,
-            scholarship_profile=scholarship_profile,
-            word_limit=word_limit
-        )
-        
-        draft_versions = await self.multi_draft_generator.generate_drafts(
-            outline=outline,
-            content_selection=content_selection,
-            scholarship_profile=scholarship_profile,
-            num_drafts=1
-        )
-        
-        draft = draft_versions[0]['draft']
-        
-        if not skip_refinement:
-            refined_result = await self.refinement_loop.refine_draft(
-                draft=draft,
+        try:
+            content_selection = await self.content_selector.select_content(
                 scholarship_profile=scholarship_profile,
-                max_iterations=1,
-                target_score=7.5
+                student_kb=student_kb,
+                strategy="weighted"
             )
-            draft = refined_result['final_draft']
-        
-        print(f"✅ Quick draft complete ({len(draft.split())} words)")
-        return draft
+            
+            outline = await self.narrative_architect.create_outline(
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                word_limit=word_limit
+            )
+            
+            draft_versions = await self.multi_draft_generator.generate_drafts(
+                outline=outline,
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                num_drafts=1
+            )
+            
+            draft = draft_versions[0]['draft']
+            
+            if not skip_refinement:
+                refined_result = await self.refinement_loop.refine_draft(
+                    draft=draft,
+                    scholarship_profile=scholarship_profile,
+                    max_iterations=1,
+                    target_score=7.5
+                )
+                draft = refined_result['final_draft']
+            
+            word_count = len(draft.split())
+            print(f"✅ Quick draft complete: {word_count}/{word_limit} words")
+            print("="*80 + "\n")
+            return draft
+            
+        except Exception as e:
+            print(f"❌ Quick draft failed: {str(e)}")
+            print("="*80 + "\n")
+            return f"[Quick draft generation failed: {str(e)}]"
     
     async def generate_latex_resume_only(
         self,
@@ -318,32 +470,44 @@ class DraftingEngine:
             LaTeX resume package with code and instructions
         """
         
-        print("📄 Generating LaTeX Resume...")
+        print("\n📄 LATEX RESUME GENERATION")
+        print("="*80)
         
-        content_selection = await self.content_selector.select_content(
-            scholarship_profile=scholarship_profile,
-            student_kb=student_kb,
-            strategy="weighted"
-        )
-        
-        from .supplementary_generator import SupplementaryGenerator
-        generator = SupplementaryGenerator()
-        
-        student_kb_dict = None
-        if student_kb and hasattr(student_kb, 'get_structured_data'):
-            student_kb_dict = {"structured_data": student_kb.get_structured_data()}
-        elif isinstance(student_kb, dict):
-            student_kb_dict = student_kb
-        
-        latex_resume = await generator.generate_latex_resume(
-            content_selection=content_selection,
-            scholarship_profile=scholarship_profile,
-            student_kb=student_kb_dict,
-            template_style=template_style
-        )
-        
-        print(f"✅ LaTeX resume generated ({template_style} template)")
-        return latex_resume
+        try:
+            content_selection = await self.content_selector.select_content(
+                scholarship_profile=scholarship_profile,
+                student_kb=student_kb,
+                strategy="weighted"
+            )
+            
+            from .supplementary_generator import SupplementaryGenerator
+            generator = SupplementaryGenerator()
+            
+            student_kb_dict = None
+            if student_kb and hasattr(student_kb, 'get_structured_data'):
+                student_kb_dict = {"structured_data": student_kb.get_structured_data()}
+            elif isinstance(student_kb, dict):
+                student_kb_dict = student_kb
+            
+            latex_resume = await generator.generate_latex_resume(
+                content_selection=content_selection,
+                scholarship_profile=scholarship_profile,
+                student_kb=student_kb_dict,
+                template_style=template_style
+            )
+            
+            print(f"✅ LaTeX resume generated ({template_style} template)")
+            print("="*80 + "\n")
+            return latex_resume
+            
+        except Exception as e:
+            print(f"❌ LaTeX resume generation failed: {str(e)}")
+            print("="*80 + "\n")
+            return {
+                "error": str(e),
+                "latex_code": "% LaTeX generation failed",
+                "template_style": template_style
+            }
     
     async def compare_strategies(
         self,
@@ -353,7 +517,8 @@ class DraftingEngine:
     ) -> Dict[str, Any]:
         """Generate drafts using different strategies and compare"""
         
-        print("🔬 Strategy Comparison Mode...")
+        print("\n🔬 STRATEGY COMPARISON MODE")
+        print("="*80)
         
         strategies = ["weighted", "diverse", "focused"]
         results = {}
@@ -361,36 +526,50 @@ class DraftingEngine:
         for strategy in strategies:
             print(f"\n  Testing strategy: {strategy}")
             
-            content_selection = await self.content_selector.select_content(
-                scholarship_profile=scholarship_profile,
-                student_kb=student_kb,
-                strategy=strategy
-            )
-            
-            outline = await self.narrative_architect.create_outline(
-                content_selection=content_selection,
-                scholarship_profile=scholarship_profile,
-                word_limit=word_limit
-            )
-            
-            drafts = await self.multi_draft_generator.generate_drafts(
-                outline=outline,
-                content_selection=content_selection,
-                scholarship_profile=scholarship_profile,
-                num_drafts=1
-            )
-            
-            auth_check = await self.authenticity_filter.check_authenticity(
-                draft=drafts[0]['draft']
-            )
-            
-            results[strategy] = {
-                "draft": drafts[0]['draft'],
-                "authenticity_score": auth_check['score'],
-                "word_count": len(drafts[0]['draft'].split()),
-                "narrative_style": outline.get('narrative_style'),
-                "primary_story": content_selection.get('primary_story', {}).get('priority')
-            }
+            try:
+                content_selection = await self.content_selector.select_content(
+                    scholarship_profile=scholarship_profile,
+                    student_kb=student_kb,
+                    strategy=strategy
+                )
+                
+                outline = await self.narrative_architect.create_outline(
+                    content_selection=content_selection,
+                    scholarship_profile=scholarship_profile,
+                    word_limit=word_limit
+                )
+                
+                drafts = await self.multi_draft_generator.generate_drafts(
+                    outline=outline,
+                    content_selection=content_selection,
+                    scholarship_profile=scholarship_profile,
+                    num_drafts=1
+                )
+                
+                auth_check = await self.authenticity_filter.check_authenticity(
+                                        draft=drafts[0]['draft']
+                )
+                
+                results[strategy] = {
+                    "draft": drafts[0]['draft'],
+                    "authenticity_score": auth_check['score'],
+                    "word_count": len(drafts[0]['draft'].split()),
+                    "narrative_style": outline.get('narrative_style'),
+                    "primary_story": content_selection.get('primary_story', {}).get('priority', 'N/A'),
+                    "emphasis": drafts[0].get('emphasis', 'balanced')
+                }
+                
+                print(f"     ✓ {strategy}: {auth_check['score']:.1f}/10 authenticity, {len(drafts[0]['draft'].split())} words")
+                
+            except Exception as e:
+                print(f"     ✗ {strategy} failed: {str(e)}")
+                results[strategy] = {
+                    "error": str(e),
+                    "draft": None,
+                    "authenticity_score": 0,
+                    "word_count": 0
+                }
         
-        print("\n✅ Strategy comparison complete!")
+        print("\n✅ Strategy comparison complete")
+        print("="*80 + "\n")
         return results

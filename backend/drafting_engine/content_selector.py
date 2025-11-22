@@ -4,6 +4,7 @@ Ranks and selects student experiences by relevance to scholarship priorities
 """
 
 import json
+import re
 from typing import Dict, Any, List, Optional
 from utils.llm_client import create_llm_client
 
@@ -129,46 +130,40 @@ class ContentSelector:
             Weighted relevance score (0.0-10.0)
         """
         
-        system_prompt = """
-        You are an expert scholarship evaluator.
-        Rate how well student experiences demonstrate specific values and priorities.
-        Be objective and evidence-based in your scoring.
-        Return only valid JSON.
-        """
+        system_prompt = """You are an expert scholarship evaluator. Rate how well student experiences demonstrate specific values and priorities. Be objective and evidence-based in your scoring. You must return ONLY valid JSON with no additional text or markdown."""
         
         story_text = story.get('text', story.get('description', str(story)))
+        value_desc = scholarship_profile.get('value_descriptions', {}).get(priority, 'Not specified')
         
-        user_message = f"""
-        Rate how well this experience demonstrates {priority}.
-        
-        EXPERIENCE:
-        {story_text}
-        
-        SCHOLARSHIP CONTEXT:
-        Name: {scholarship_profile.get('name', 'N/A')}
-        Mission: {scholarship_profile.get('mission', 'N/A')}
-        What they value in {priority}: {scholarship_profile.get('value_descriptions', {}).get(priority, 'N/A')}
-        
-        EVALUATION CRITERIA:
-        1. **Direct Evidence**: Does the experience directly demonstrate {priority}?
-        2. **Impact/Outcomes**: Are there measurable results or meaningful outcomes?
-        3. **Specificity**: Is the experience described with concrete details?
-        4. **Authenticity**: Does it feel genuine and personal?
-        5. **Alignment**: Does it match what this scholarship values in {priority}?
-        
-        Provide scoring as JSON:
-        {{
-            "raw_score": 0-10 (how well it demonstrates {priority}),
-            "evidence_score": 0-10,
-            "impact_score": 0-10,
-            "specificity_score": 0-10,
-            "authenticity_score": 0-10,
-            "alignment_score": 0-10,
-            "reasoning": "Brief explanation of score",
-            "key_strengths": ["strength 1", "strength 2"],
-            "key_weaknesses": ["weakness 1"] or []
-        }}
-        """
+        user_message = f"""Rate how well this experience demonstrates {priority}.
+
+EXPERIENCE:
+{story_text}
+
+SCHOLARSHIP CONTEXT:
+Name: {scholarship_profile.get('name', 'N/A')}
+Mission: {scholarship_profile.get('mission', 'N/A')}
+What they value in {priority}: {value_desc}
+
+EVALUATION CRITERIA:
+1. Direct Evidence: Does the experience directly demonstrate {priority}?
+2. Impact/Outcomes: Are there measurable results or meaningful outcomes?
+3. Specificity: Is the experience described with concrete details?
+4. Authenticity: Does it feel genuine and personal?
+5. Alignment: Does it match what this scholarship values in {priority}?
+
+Return ONLY this JSON structure (no markdown, no code blocks):
+{{
+    "raw_score": 8.5,
+    "evidence_score": 9.0,
+    "impact_score": 8.0,
+    "specificity_score": 8.5,
+    "authenticity_score": 9.0,
+    "alignment_score": 8.0,
+    "reasoning": "Brief explanation of score",
+    "key_strengths": ["strength 1", "strength 2"],
+    "key_weaknesses": ["weakness 1"]
+}}"""
         
         try:
             score_json = await self.llm.call(
@@ -176,18 +171,111 @@ class ContentSelector:
                 user_message=user_message
             )
             
-            score_data = json.loads(score_json)
+            # Debug: Print raw response
+            print(f"\n[DEBUG] Raw LLM response for {priority}:")
+            print(f"Response length: {len(score_json) if score_json else 0}")
+            print(f"First 200 chars: {score_json[:200] if score_json else 'EMPTY'}")
+            
+            if not score_json or not score_json.strip():
+                print(f"[WARNING] Empty response from LLM for {priority}")
+                return 5.0 * weight
+            
+            # Clean response - remove markdown code blocks if present
+            cleaned_json = self._clean_json_response(score_json)
+            
+            # Parse JSON
+            score_data = json.loads(cleaned_json)
             raw_score = score_data.get('raw_score', 5.0)
+            
+            # Validate score is numeric
+            if not isinstance(raw_score, (int, float)):
+                print(f"[WARNING] Invalid raw_score type: {type(raw_score)}")
+                raw_score = 5.0
             
             # Apply priority weight
             weighted_score = float(raw_score) * weight
             
+            print(f"[DEBUG] Parsed score: raw={raw_score}, weighted={weighted_score:.2f}")
+            
             return weighted_score
             
-        except (json.JSONDecodeError, ValueError) as e:
-            # Fallback: try simple numeric extraction
-            print(f"Error parsing relevance score: {e}")
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] JSON parsing failed for {priority}: {e}")
+            print(f"[ERROR] Raw response: {score_json[:500] if score_json else 'EMPTY'}")
+            
+            # Try to extract numeric score as fallback
+            fallback_score = self._extract_numeric_score(score_json)
+            if fallback_score is not None:
+                print(f"[FALLBACK] Extracted numeric score: {fallback_score}")
+                return fallback_score * weight
+            
             return 5.0 * weight  # Default to middle score
+            
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in calculate_relevance: {e}")
+            return 5.0 * weight
+    
+    def _clean_json_response(self, response: str) -> str:
+        """
+        Clean LLM response to extract pure JSON
+        
+        Handles:
+        - Markdown code blocks (```json ... ```)
+        - Leading/trailing whitespace
+        - Text before/after JSON
+        """
+        if not response:
+            return "{}"
+        
+        # Remove markdown code blocks
+        response = re.sub(r'^```json\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'^```\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'\s*```$', '', response, flags=re.MULTILINE)
+        
+        # Try to find JSON object
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            return json_match.group(0)
+        
+        return response.strip()
+    
+    def _extract_numeric_score(self, text: str) -> Optional[float]:
+        """
+        Extract a numeric score from text as fallback
+        
+        Looks for patterns like:
+        - "raw_score": 8.5
+        - score: 7.0
+        - 8.5/10
+        """
+        if not text:
+            return None
+        
+        # Try to find raw_score in text
+        score_match = re.search(r'"?raw_score"?\s*:\s*([0-9.]+)', text)
+        if score_match:
+            try:
+                return float(score_match.group(1))
+            except ValueError:
+                pass
+        
+        # Try to find any score pattern
+        score_match = re.search(r'score["\']?\s*:\s*([0-9.]+)', text, re.IGNORECASE)
+        if score_match:
+            try:
+                return float(score_match.group(1))
+            except ValueError:
+                pass
+        
+        # Try to find X/10 pattern
+        score_match = re.search(r'([0-9.]+)\s*/\s*10', text)
+        if score_match:
+            try:
+                return float(score_match.group(1))
+            except ValueError:
+                pass
+        
+        return None
     
     async def _analyze_story_fit(
         self,
@@ -205,45 +293,55 @@ class ContentSelector:
             Detailed analysis with suggestions
         """
         
-        system_prompt = """
-        You are an expert scholarship essay strategist.
-        Analyze how student experiences can be positioned for maximum impact.
-        Return only valid JSON.
-        """
+        system_prompt = """You are an expert scholarship essay strategist. Analyze how student experiences can be positioned for maximum impact. Return ONLY valid JSON with no markdown or code blocks."""
         
         story_text = story.get('text', story.get('description', str(story)))
         
-        user_message = f"""
-        Analyze how this experience can be positioned for this scholarship essay.
+        user_message = f"""Analyze how this experience can be positioned for this scholarship essay.
+
+EXPERIENCE:
+{story_text}
+
+SCHOLARSHIP:
+{json.dumps(scholarship_profile, indent=2)}
+
+Return ONLY this JSON structure (no markdown):
+{{
+    "fit_score": 8.5,
+    "strongest_angles": ["angle 1", "angle 2", "angle 3"],
+    "key_details_to_emphasize": ["detail 1", "detail 2"],
+    "key_details_to_downplay": ["detail 1"],
+    "suggested_framing": "How to position this story",
+    "vocabulary_to_use": ["term 1", "term 2"],
+    "potential_hooks": ["hook option 1", "hook option 2"],
+    "connection_to_values": {{
+        "leadership": "How it connects",
+        "community_service": "How it connects"
+    }}
+}}"""
         
-        EXPERIENCE:
-        {story_text}
-        
-        SCHOLARSHIP:
-        {json.dumps(scholarship_profile, indent=2)}
-        
-        Provide strategic analysis as JSON:
-        {{
-            "fit_score": 0-10,
-            "strongest_angles": ["angle 1", "angle 2", "angle 3"],
-            "key_details_to_emphasize": ["detail 1", "detail 2"],
-            "key_details_to_downplay": ["detail 1"] or [],
-            "suggested_framing": "How to position this story",
-            "vocabulary_to_use": ["term 1", "term 2"],
-            "potential_hooks": ["hook option 1", "hook option 2"],
-            "connection_to_values": {{
-                "priority_1": "How it connects",
-                "priority_2": "How it connects"
-            }}
-        }}
-        """
-        
-        analysis_json = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return json.loads(analysis_json)
+        try:
+            analysis_json = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            cleaned_json = self._clean_json_response(analysis_json)
+            return json.loads(cleaned_json)
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to analyze story fit: {e}")
+            # Return minimal valid structure
+            return {
+                "fit_score": 7.0,
+                "strongest_angles": ["Experience demonstrates relevant skills"],
+                "key_details_to_emphasize": ["Impact and outcomes"],
+                "key_details_to_downplay": [],
+                "suggested_framing": "Focus on personal growth and impact",
+                "vocabulary_to_use": ["leadership", "impact", "community"],
+                "potential_hooks": ["Personal experience", "Meaningful impact"],
+                "connection_to_values": {}
+            }
     
     def _diverse_ranking(
         self,
@@ -325,49 +423,54 @@ class ContentSelector:
             Comparative analysis with recommendation
         """
         
-        system_prompt = """
-        You are an expert scholarship advisor.
-        Compare student experiences and recommend which to feature in an essay.
-        Return only valid JSON.
-        """
+        system_prompt = """You are an expert scholarship advisor. Compare student experiences and recommend which to feature in an essay. Return ONLY valid JSON."""
         
         story_summaries = []
         for i, story in enumerate(stories[:5], 1):  # Limit to top 5
             story_text = story.get('story', {}).get('text', str(story.get('story', '')))
             story_summaries.append(f"Story {i}: {story_text[:300]}...")
         
-        user_message = f"""
-        Compare these student experiences for a scholarship essay and recommend the best choice.
-        
-        SCHOLARSHIP: {scholarship_profile.get('name', 'N/A')}
-        Values: {scholarship_profile.get('priorities', [])}
-        
-        STORY OPTIONS:
-        {chr(10).join(story_summaries)}
-        
-        Provide comparison as JSON:
+        user_message = f"""Compare these student experiences for a scholarship essay and recommend the best choice.
+
+SCHOLARSHIP: {scholarship_profile.get('name', 'N/A')}
+Values: {scholarship_profile.get('priorities', [])}
+
+STORY OPTIONS:
+{chr(10).join(story_summaries)}
+
+Return ONLY valid JSON (no markdown):
+{{
+    "recommended_story": 1,
+    "reasoning": "Why this story is strongest",
+    "story_comparisons": [
         {{
-            "recommended_story": 1,
-            "reasoning": "Why this story is strongest",
-            "story_comparisons": [
-                {{
-                    "story_number": 1,
-                    "strengths": ["strength 1", "strength 2"],
-                    "weaknesses": ["weakness 1"],
-                    "fit_score": 8.5,
-                    "uniqueness_score": 7.0
-                }}
-            ],
-            "alternative_approach": "Consider this if primary doesn't work well"
+            "story_number": 1,
+            "strengths": ["strength 1", "strength 2"],
+            "weaknesses": ["weakness 1"],
+            "fit_score": 8.5,
+            "uniqueness_score": 7.0
         }}
-        """
+    ],
+    "alternative_approach": "Consider this if primary doesn't work well"
+}}"""
         
-        comparison_json = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return json.loads(comparison_json)
+        try:
+            comparison_json = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            cleaned_json = self._clean_json_response(comparison_json)
+            return json.loads(cleaned_json)
+            
+        except Exception as e:
+            print(f"[ERROR] Story comparison failed: {e}")
+            return {
+                "recommended_story": 1,
+                "reasoning": "Unable to perform comparison",
+                "story_comparisons": [],
+                "alternative_approach": "Review stories manually"
+            }
     
     async def suggest_missing_content(
         self,
@@ -385,33 +488,33 @@ class ContentSelector:
             List of content gaps and suggestions
         """
         
-        system_prompt = """
-        You are an expert scholarship advisor.
-        Identify gaps in essay content and suggest what's missing.
-        Return only a JSON array of suggestions.
-        """
+        system_prompt = """You are an expert scholarship advisor. Identify gaps in essay content and suggest what's missing. Return ONLY a JSON array of strings."""
         
-        user_message = f"""
-        Review the selected content and identify what's missing for this scholarship.
+        user_message = f"""Review the selected content and identify what's missing for this scholarship.
+
+SCHOLARSHIP PRIORITIES:
+{json.dumps(scholarship_profile.get('priorities', []), indent=2)}
+
+SELECTED CONTENT:
+Primary Story: {selected_content.get('primary_story', {}).get('story', {}).get('text', 'N/A')[:200]}
+Supporting Stories: {len(selected_content.get('supporting_stories', []))} stories selected
+
+Return ONLY a JSON array (no markdown):
+[
+    "Missing: specific examples of X",
+    "Could strengthen: quantifiable outcomes",
+    "Consider adding: personal connection to Y"
+]"""
         
-        SCHOLARSHIP PRIORITIES:
-        {json.dumps(scholarship_profile.get('priorities', []), indent=2)}
-        
-        SELECTED CONTENT:
-        Primary Story: {selected_content.get('primary_story', {}).get('story', {}).get('text', 'N/A')[:200]}
-        Supporting Stories: {len(selected_content.get('supporting_stories', []))} stories selected
-        
-        Identify gaps as JSON array:
-        [
-            "Missing: specific examples of [priority]",
-            "Could strengthen: quantifiable outcomes",
-            "Consider adding: personal connection to [value]"
-        ]
-        """
-        
-        suggestions_json = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return json.loads(suggestions_json)
+        try:
+            suggestions_json = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            cleaned_json = self._clean_json_response(suggestions_json)
+            return json.loads(cleaned_json)
+            
+        except Exception as e:
+            print(f"[ERROR] Missing content analysis failed: {e}")
+            return ["Unable to analyze content gaps"]

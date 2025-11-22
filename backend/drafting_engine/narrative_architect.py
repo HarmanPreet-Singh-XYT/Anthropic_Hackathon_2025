@@ -4,7 +4,8 @@ Designs essay structure and narrative arc based on scholarship personality
 """
 
 import json
-from typing import Dict, Any, Literal
+import re
+from typing import Dict, Any, Literal, Optional
 from utils.llm_client import create_llm_client
 
 
@@ -25,6 +26,30 @@ class NarrativeArchitect:
         """
         self.llm = create_llm_client(temperature=temperature)
     
+    def _clean_json_response(self, response: str) -> str:
+        """
+        Clean LLM response to extract pure JSON
+        
+        Handles:
+        - Markdown code blocks (```json ... ```)
+        - Leading/trailing whitespace
+        - Text before/after JSON
+        """
+        if not response:
+            return "{}"
+        
+        # Remove markdown code blocks
+        response = re.sub(r'^```json\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'^```\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'\s*```$', '', response, flags=re.MULTILINE)
+        
+        # Try to find JSON object or array
+        json_match = re.search(r'[\{$$].*[\}$$]', response, re.DOTALL)
+        if json_match:
+            return json_match.group(0)
+        
+        return response.strip()
+    
     async def create_outline(
         self,
         content_selection: Dict[str, Any],
@@ -43,8 +68,10 @@ class NarrativeArchitect:
             Structured outline with sections and word allocations
         """
         
+        print("    🏗️  Detecting narrative style...")
         # Determine narrative arc based on scholarship type
         narrative_style = await self.detect_narrative_style(scholarship_profile)
+        print(f"    📖 Selected narrative style: {narrative_style}")
         
         # Get base outline template
         outline = self._get_outline_template(narrative_style)
@@ -57,6 +84,7 @@ class NarrativeArchitect:
         outline["total_word_limit"] = word_limit
         outline["scholarship_name"] = scholarship_profile.get('name', 'N/A')
         
+        print("    💡 Generating section guidance...")
         # Get AI-powered section guidance
         section_guidance = await self._generate_section_guidance(
             outline,
@@ -81,72 +109,77 @@ class NarrativeArchitect:
             Optimal narrative style for this scholarship
         """
         
-        system_prompt = """
-        You are an expert in scholarship essay strategy and narrative structure.
-        Analyze scholarship characteristics to determine the most effective narrative approach.
-        Respond with ONLY the narrative style name, no explanation.
-        """
+        system_prompt = """You are an expert in scholarship essay strategy and narrative structure. Analyze scholarship characteristics to determine the most effective narrative approach. Respond with ONLY the narrative style name (hero_journey, achievement_showcase, or community_impact), no explanation or additional text."""
         
-        user_message = f"""
-        Based on this scholarship's values and language, what narrative style will resonate best?
+        user_message = f"""Based on this scholarship's values and language, what narrative style will resonate best?
+
+SCHOLARSHIP DETAILS:
+Name: {scholarship_profile.get('name', 'N/A')}
+Description: {scholarship_profile.get('description', 'N/A')}
+Key Values: {json.dumps(scholarship_profile.get('priorities', []), indent=2)}
+Mission: {scholarship_profile.get('mission', 'N/A')}
+
+Choose ONE narrative style:
+
+1. **hero_journey**: Best for scholarships emphasizing:
+   - Personal transformation and growth
+   - Overcoming significant obstacles
+   - Resilience and perseverance
+   - Character development
+   Example: "Students who have overcome adversity"
+
+2. **achievement_showcase**: Best for scholarships emphasizing:
+   - Technical excellence and innovation
+   - Academic/professional accomplishments
+   - Measurable results and outcomes
+   - STEM or merit-based focus
+   Example: "Outstanding academic achievement"
+
+3. **community_impact**: Best for scholarships emphasizing:
+   - Service and giving back
+   - Community engagement
+   - Social justice or activism
+   Example: "Students committed to serving their communities"
+
+Respond with ONLY one of these exact strings:
+- hero_journey
+- achievement_showcase
+- community_impact"""
         
-        SCHOLARSHIP DETAILS:
-        Name: {scholarship_profile.get('name', 'N/A')}
-        Description: {scholarship_profile.get('description', 'N/A')}
-        Key Values: {json.dumps(scholarship_profile.get('priorities', []), indent=2)}
-        Mission: {scholarship_profile.get('mission', 'N/A')}
-        Past Winner Themes: {scholarship_profile.get('winner_patterns', 'N/A')}
-        Organization Type: {scholarship_profile.get('organization_type', 'N/A')}
-        
-        Choose ONE narrative style:
-        
-        1. **hero_journey**: Best for scholarships emphasizing:
-           - Personal transformation and growth
-           - Overcoming significant obstacles
-           - Resilience and perseverance
-           - Character development
-           - Life-changing experiences
-           Example: "Students who have overcome adversity"
-        
-        2. **achievement_showcase**: Best for scholarships emphasizing:
-           - Technical excellence and innovation
-           - Academic/professional accomplishments
-           - Measurable results and outcomes
-           - Leadership through expertise
-           - STEM or merit-based focus
-           Example: "Outstanding academic achievement in computer science"
-        
-        3. **community_impact**: Best for scholarships emphasizing:
-           - Service and giving back
-           - Empathy and social awareness
-           - Community engagement
-           - Collective benefit over individual success
-           - Social justice or activism
-           Example: "Students committed to serving their communities"
-        
-        Respond with ONLY one of these exact strings:
-        - hero_journey
-        - achievement_showcase
-        - community_impact
-        """
-        
-        response = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        # Clean and validate response
-        style = response.strip().lower()
-        
-        # Map to valid style
-        if "hero" in style or "journey" in style:
-            return "hero_journey"
-        elif "achievement" in style or "showcase" in style:
-            return "achievement_showcase"
-        elif "community" in style or "impact" in style:
-            return "community_impact"
-        else:
-            # Default fallback
+        try:
+            response = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            print(f"    [DEBUG] Narrative style response: {response[:200]}")
+            
+            # Clean and validate response
+            style = response.strip().lower()
+            
+            # Map to valid style
+            if "hero" in style or "journey" in style:
+                return "hero_journey"
+            elif "achievement" in style or "showcase" in style:
+                return "achievement_showcase"
+            elif "community" in style or "impact" in style:
+                return "community_impact"
+            else:
+                # Default fallback based on priorities
+                priorities = scholarship_profile.get('priorities', [])
+                if any(word in str(priorities).lower() for word in ['service', 'community', 'impact']):
+                    print("    [FALLBACK] Defaulting to community_impact based on priorities")
+                    return "community_impact"
+                elif any(word in str(priorities).lower() for word in ['academic', 'achievement', 'excellence']):
+                    print("    [FALLBACK] Defaulting to achievement_showcase based on priorities")
+                    return "achievement_showcase"
+                else:
+                    print("    [FALLBACK] Defaulting to hero_journey")
+                    return "hero_journey"
+                    
+        except Exception as e:
+            print(f"    [ERROR] Failed to detect narrative style: {e}")
+            print("    [FALLBACK] Defaulting to hero_journey")
             return "hero_journey"
     
     def _get_outline_template(self, narrative_style: NarrativeStyle) -> Dict[str, Any]:
@@ -302,45 +335,84 @@ class NarrativeArchitect:
             Dictionary mapping section names to specific guidance
         """
         
-        system_prompt = """
-        You are an expert essay writing coach specializing in scholarship applications.
-        Provide specific, actionable guidance for each essay section.
-        Return only valid JSON.
+        system_prompt = """You are an expert essay writing coach specializing in scholarship applications. Provide specific, actionable guidance for each essay section. Return ONLY valid JSON with no markdown or code blocks."""
+        
+        # Simplify content selection for prompt
+        primary_story = content_selection.get('primary_story', {})
+        story_text = ""
+        if primary_story:
+            story_data = primary_story.get('story', {})
+            story_text = story_data.get('text', str(story_data))[:300]
+        
+        user_message = f"""Provide specific writing guidance for each section of this essay outline.
+
+OUTLINE STRUCTURE:
+{json.dumps(outline['sections'], indent=2)}
+
+PRIMARY STORY TO USE:
+{story_text}...
+
+SCHOLARSHIP FOCUS:
+Values: {scholarship_profile.get('priorities', [])}
+Mission: {scholarship_profile.get('mission', 'N/A')[:200]}
+
+For each section, provide:
+- What specific story/experience to use
+- Key points to emphasize
+- What to avoid
+
+Return ONLY valid JSON (no markdown):
+{{
+    "hook": "Specific guidance for hook section...",
+    "challenge": "Specific guidance for next section...",
+    ...
+}}"""
+        
+        try:
+            guidance_json = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            print(f"    [DEBUG] Section guidance response length: {len(guidance_json) if guidance_json else 0}")
+            
+            if not guidance_json or not guidance_json.strip():
+                print("    [WARNING] Empty section guidance response")
+                return self._get_default_section_guidance(outline)
+            
+            cleaned_json = self._clean_json_response(guidance_json)
+            return json.loads(cleaned_json)
+            
+        except json.JSONDecodeError as e:
+            print(f"    [ERROR] Failed to parse section guidance: {e}")
+            print(f"    [ERROR] Response: {guidance_json[:500] if guidance_json else 'EMPTY'}")
+            return self._get_default_section_guidance(outline)
+            
+        except Exception as e:
+            print(f"    [ERROR] Unexpected error in section guidance: {e}")
+            return self._get_default_section_guidance(outline)
+    
+    def _get_default_section_guidance(self, outline: Dict[str, Any]) -> Dict[str, str]:
         """
+        Provide default guidance when LLM fails
         
-        user_message = f"""
-        Provide specific writing guidance for each section of this essay outline.
-        
-        OUTLINE STRUCTURE:
-        {json.dumps(outline['sections'], indent=2)}
-        
-        AVAILABLE CONTENT:
-        {json.dumps(content_selection, indent=2)}
-        
-        SCHOLARSHIP FOCUS:
-        Values: {scholarship_profile.get('priorities', [])}
-        Tone: {scholarship_profile.get('tone_profile', 'professional')}
-        
-        For each section, provide:
-        - What specific story/experience to use
-        - Key points to emphasize
-        - Vocabulary/phrases to incorporate
-        - What to avoid
-        
-        Format as JSON:
-        {{
-            "hook": "Specific guidance for hook section...",
-            "challenge": "Specific guidance for challenge section...",
-            ...
-        }}
+        Args:
+            outline: Outline structure
+            
+        Returns:
+            Default guidance for each section
         """
+        sections = outline.get('sections', {})
+        guidance = {}
         
-        guidance_json = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
+        for section_name, section_data in sections.items():
+            guidance[section_name] = (
+                f"{section_data.get('description', 'Write this section')}. "
+                f"Purpose: {section_data.get('purpose', 'Support your narrative')}. "
+                f"Target {section_data.get('target_words', 100)} words."
+            )
         
-        return json.loads(guidance_json)
+        return guidance
     
     async def validate_outline_fit(
         self,
@@ -358,40 +430,41 @@ class NarrativeArchitect:
             Validation results with confidence score and suggestions
         """
         
-        system_prompt = """
-        You are an expert in scholarship essay strategy.
-        Evaluate whether an outline structure is optimal for a specific scholarship.
-        Return only valid JSON.
-        """
+        system_prompt = """You are an expert in scholarship essay strategy. Evaluate whether an outline structure is optimal for a specific scholarship. Return ONLY valid JSON with no markdown."""
         
-        user_message = f"""
-        Evaluate this outline for alignment with scholarship characteristics:
+        user_message = f"""Evaluate this outline for alignment with scholarship characteristics:
+
+OUTLINE:
+Narrative Style: {outline.get('narrative_style', 'N/A')}
+Sections: {list(outline.get('sections', {}).keys())}
+
+SCHOLARSHIP:
+Name: {scholarship_profile.get('name', 'N/A')}
+Values: {scholarship_profile.get('priorities', [])}
+Mission: {scholarship_profile.get('mission', 'N/A')[:200]}
+
+Provide evaluation as JSON (no markdown):
+{{
+    "confidence_score": 8.5,
+    "strengths": ["strength 1", "strength 2"],
+    "concerns": ["concern 1"],
+    "alternative_style": null
+}}"""
         
-        OUTLINE:
-        Narrative Style: {outline.get('narrative_style', 'N/A')}
-        Sections: {list(outline.get('sections', {}).keys())}
-        
-        SCHOLARSHIP:
-        {json.dumps(scholarship_profile, indent=2)}
-        
-        Provide:
-        - confidence_score: 0-10 (how well this structure matches)
-        - strengths: What works well about this structure
-        - concerns: Potential mismatches or gaps
-        - alternative_style: If confidence < 7, suggest better narrative style
-        
-        Format as JSON:
-        {{
-            "confidence_score": 8.5,
-            "strengths": ["strength 1", "strength 2"],
-            "concerns": ["concern 1"] or [],
-            "alternative_style": "hero_journey" or null
-        }}
-        """
-        
-        validation_json = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return json.loads(validation_json)
+        try:
+            validation_json = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            cleaned_json = self._clean_json_response(validation_json)
+            return json.loads(cleaned_json)
+            
+        except Exception as e:
+            print(f"    [ERROR] Outline validation failed: {e}")
+            return {
+                "confidence_score": 7.0,
+                "strengths": ["Structure follows best practices"],
+                "concerns": [],
+                "alternative_style": None
+            }

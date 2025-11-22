@@ -4,7 +4,8 @@ Generates multiple essay drafts with different strategic emphases
 """
 
 import json
-from typing import Dict, Any, List, Literal
+import re
+from typing import Dict, Any, List, Literal, Optional
 from utils.llm_client import create_llm_client
 
 
@@ -25,6 +26,25 @@ class MultiDraftGenerator:
         """
         self.llm = create_llm_client(temperature=temperature)
         self.transition_llm = create_llm_client(temperature=0.5)  # Lower temp for coherent transitions
+    
+    def _clean_json_response(self, response: str) -> str:
+        """
+        Clean LLM response to extract pure JSON
+        """
+        if not response:
+            return "{}"
+        
+        # Remove markdown code blocks
+        response = re.sub(r'^```json\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'^```\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'\s*```$', '', response, flags=re.MULTILINE)
+        
+        # Try to find JSON object or array
+        json_match = re.search(r'[\{$$].*[\}$$]', response, re.DOTALL)
+        if json_match:
+            return json_match.group(0)
+        
+        return response.strip()
     
     async def generate_drafts(
         self,
@@ -53,6 +73,8 @@ class MultiDraftGenerator:
             # Determine emphasis strategy for this draft
             emphasis = emphasis_options[i % len(emphasis_options)]
             
+            print(f"    ✍️  Generating draft {i+1}/{num_drafts} (emphasis: {emphasis})...")
+            
             # Generate the draft
             draft_text = await self.generate_single_draft(
                 outline=outline,
@@ -64,13 +86,18 @@ class MultiDraftGenerator:
             # Get explanation of approach
             rationale = await self.explain_approach(emphasis, scholarship_profile)
             
+            word_count = len(draft_text.split())
+            target = outline.get('total_word_limit', 650)
+            
+            print(f"       Draft {i+1} complete: {word_count}/{target} words")
+            
             drafts.append({
                 "version": i + 1,
                 "emphasis": emphasis,
                 "draft": draft_text,
                 "rationale": rationale,
-                "word_count": len(draft_text.split()),
-                "target_word_count": outline.get('total_word_limit', 650)
+                "word_count": word_count,
+                "target_word_count": target
             })
         
         return drafts
@@ -100,20 +127,31 @@ class MultiDraftGenerator:
         sections = outline.get('sections', {})
         
         for section_name, section_data in sections.items():
-            section_text = await self._generate_section(
-                section_name=section_name,
-                section_data=section_data,
-                content=content,
-                scholarship=scholarship,
-                emphasis=emphasis,
-                outline=outline
-            )
-            essay_sections[section_name] = section_text
+            try:
+                section_text = await self._generate_section(
+                    section_name=section_name,
+                    section_data=section_data,
+                    content=content,
+                    scholarship=scholarship,
+                    emphasis=emphasis,
+                    outline=outline
+                )
+                essay_sections[section_name] = section_text
+            except Exception as e:
+                print(f"       [ERROR] Failed to generate {section_name} section: {e}")
+                # Use fallback content
+                essay_sections[section_name] = self._get_fallback_section(section_name, section_data)
         
         # Combine sections with smooth transitions
         full_essay = await self.weave_sections(essay_sections, outline)
         
         return full_essay
+    
+    def _get_fallback_section(self, section_name: str, section_data: Dict[str, Any]) -> str:
+        """
+        Generate basic fallback content for a section
+        """
+        return f"[{section_name.title()} section: {section_data.get('description', 'Content goes here')}]"
     
     async def _generate_section(
         self,
@@ -139,12 +177,7 @@ class MultiDraftGenerator:
             Section text
         """
         
-        system_prompt = """
-        You are an expert scholarship essay writer.
-        Write compelling, authentic essay sections that showcase student achievements
-        while maintaining natural voice and avoiding clichés.
-        Return only the section content, no meta-commentary or labels.
-        """
+        system_prompt = """You are an expert scholarship essay writer. Write compelling, authentic essay sections that showcase student achievements while maintaining natural voice and avoiding clichés. Return only the section content with no meta-commentary, labels, or markdown formatting."""
         
         # Get emphasis-specific instructions
         emphasis_guidance = self._get_emphasis_guidance(emphasis, scholarship)
@@ -152,49 +185,66 @@ class MultiDraftGenerator:
         # Get relevant content for this section
         relevant_content = self.get_relevant_content(section_name, content)
         
-        user_message = f"""
-        Write the {section_name.upper()} section of a scholarship essay.
+        # Simplify scholarship context
+        priorities = scholarship.get('priorities', [])
+        top_priorities = ', '.join(priorities[:3]) if priorities else 'scholarship values'
+        mission = scholarship.get('mission', 'N/A')
+        if len(mission) > 200:
+            mission = mission[:200] + "..."
         
-        SECTION PURPOSE:
-        {section_data.get('description', 'N/A')}
-        Goal: {section_data.get('purpose', 'N/A')}
+        user_message = f"""Write the {section_name.upper()} section of a scholarship essay.
+
+SECTION PURPOSE:
+{section_data.get('description', 'N/A')}
+Goal: {section_data.get('purpose', 'N/A')}
+
+SCHOLARSHIP CONTEXT:
+Name: {scholarship.get('name', 'N/A')}
+Key Values: {top_priorities}
+Mission: {mission}
+
+CONTENT TO USE:
+{relevant_content[:500]}...
+
+STRATEGIC EMPHASIS:
+{emphasis_guidance}
+
+CONSTRAINTS:
+- Target: ~{section_data.get('target_words', 100)} words
+- Range: {section_data.get('word_range', {}).get('min', 80)}-{section_data.get('word_range', {}).get('max', 120)} words
+- Include specific details and concrete examples
+- Use active voice and strong verbs
+- Avoid generic openings like "Throughout my life..."
+- Include quantifiable impact (numbers, percentages)
+
+STYLE:
+- Authentic student voice (not overly formal)
+- Specific, not general
+- Show, don't just tell (vivid details)
+- Connect to scholarship's mission
+
+Write ONLY the section content. No labels, preamble, or explanation."""
         
-        SCHOLARSHIP CONTEXT:
-        Name: {scholarship.get('name', 'N/A')}
-        Key Values: {', '.join(scholarship.get('priorities', [])[:3])}
-        Mission: {scholarship.get('mission', 'N/A')}
-        Tone: {scholarship.get('tone_profile', 'professional')}
-        
-        CONTENT TO USE:
-        {relevant_content}
-        
-        STRATEGIC EMPHASIS:
-        {emphasis_guidance}
-        
-        CONSTRAINTS:
-        - Target word count: ~{section_data.get('target_words', 100)} words
-        - Word range: {section_data.get('word_range', {}).get('min', 80)}-{section_data.get('word_range', {}).get('max', 120)} words
-        - Must include specific details and concrete examples
-        - Use active voice and strong verbs
-        - Avoid generic openings like "Throughout my life..." or "Ever since I was young..."
-        - Include quantifiable impact where possible (numbers, percentages, scale)
-        
-        STYLE REQUIREMENTS:
-        - Maintain authentic student voice (not overly formal or artificial)
-        - Be specific, not general ("increased membership by 40%" not "improved the club")
-        - Show, don't just tell (use vivid details and scenes)
-        - Connect naturally to scholarship's mission
-        - Start with impact or intrigue, not background
-        
-        Write ONLY the section content. No section labels, no preamble, no explanation.
-        """
-        
-        section_text = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return section_text.strip()
+        try:
+            section_text = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            if not section_text or not section_text.strip():
+                print(f"       [WARNING] Empty response for {section_name} section")
+                return self._get_fallback_section(section_name, section_data)
+            
+            # Clean any markdown or labels
+            section_text = re.sub(r'^\*\*.*?\*\*:?\s*', '', section_text, flags=re.MULTILINE)
+            section_text = re.sub(r'^#{1,6}\s+.*$', '', section_text, flags=re.MULTILINE)
+            section_text = re.sub(r'^$$.*?$$:?\s*', '', section_text, flags=re.MULTILINE)
+            
+            return section_text.strip()
+            
+        except Exception as e:
+            print(f"       [ERROR] Failed to generate {section_name}: {e}")
+            return self._get_fallback_section(section_name, section_data)
     
     def _get_emphasis_guidance(
         self,
@@ -216,29 +266,24 @@ class MultiDraftGenerator:
         top_priority = priorities[0] if priorities else "scholarship values"
         
         if emphasis == "primary_priority":
-            return f"""
-            FOCUS HEAVILY on demonstrating: {top_priority}
-            - Every example should tie back to this value
-            - Use vocabulary related to this priority
-            - Make this the central theme of the section
-            """
+            return f"""FOCUS HEAVILY on demonstrating: {top_priority}
+- Every example should tie back to this value
+- Use vocabulary related to this priority
+- Make this the central theme"""
         
         elif emphasis == "balanced":
-            return f"""
-            DISTRIBUTE ATTENTION across multiple values: {', '.join(priorities[:3])}
-            - Show how you embody multiple scholarship priorities
-            - Balance different aspects of your experience
-            - Demonstrate well-rounded alignment
-            """
+            top_three = ', '.join(priorities[:3]) if len(priorities) >= 3 else top_priority
+            return f"""DISTRIBUTE ATTENTION across: {top_three}
+- Show how you embody multiple scholarship priorities
+- Balance different aspects of your experience
+- Demonstrate well-rounded alignment"""
         
         else:  # storytelling
-            return f"""
-            PRIORITIZE NARRATIVE FLOW and compelling storytelling
-            - Focus on creating an engaging, memorable narrative
-            - Use vivid details and emotional resonance
-            - Let the story naturally reveal alignment with values
-            - Emphasize personal voice and authenticity over explicit value statements
-            """
+            return """PRIORITIZE NARRATIVE FLOW and compelling storytelling
+- Focus on creating an engaging, memorable narrative
+- Use vivid details and emotional resonance
+- Let the story naturally reveal alignment with values
+- Emphasize personal voice and authenticity"""
     
     def get_relevant_content(
         self,
@@ -256,36 +301,19 @@ class MultiDraftGenerator:
             Formatted relevant content
         """
         
-        # Map section names to content types
-        section_content_map = {
-            "hook": ["primary_story", "most_impactful_moment"],
-            "challenge": ["obstacles", "context", "problem_statement"],
-            "action": ["initiatives", "leadership_examples", "projects"],
-            "impact": ["outcomes", "results", "metrics"],
-            "reflection": ["growth", "learnings", "future_goals"],
-            "context": ["background", "motivation"],
-            "approach": ["methodology", "innovation", "process"],
-            "results": ["outcomes", "metrics", "achievements"],
-            "vision": ["future_goals", "aspirations"],
-            "empathy": ["personal_connection", "motivation"],
-            "commitment": ["ongoing_work", "future_plans"]
-        }
+        # Get primary story
+        primary_story = content.get('primary_story', {})
+        if primary_story:
+            story_data = primary_story.get('story', {})
+            story_text = story_data.get('text', str(story_data))
+            
+            # Return truncated story text as relevant content
+            if len(story_text) > 500:
+                return story_text[:500] + "..."
+            return story_text
         
-        # Get relevant content keys for this section
-        relevant_keys = section_content_map.get(section_name, [])
-        
-        # Extract relevant content
-        relevant_parts = []
-        for key in relevant_keys:
-            if key in content:
-                relevant_parts.append(f"{key}: {content[key]}")
-        
-        if not relevant_parts:
-            # Fallback to primary story if no specific mapping
-            primary = content.get('primary_story', content.get('experiences', {}))
-            relevant_parts.append(f"Available content: {json.dumps(primary, indent=2)}")
-        
-        return "\n".join(relevant_parts)
+        # Fallback
+        return "Use student's experiences to demonstrate relevant skills and values"
     
     async def weave_sections(
         self,
@@ -343,48 +371,45 @@ class MultiDraftGenerator:
             Transition sentence (or empty string if not needed)
         """
         
-        system_prompt = """
-        You are an expert at creating smooth transitions in essays.
-        Create brief, natural transition sentences that connect ideas seamlessly.
-        If sections already flow well, return nothing.
-        """
+        system_prompt = """You are an expert at creating smooth transitions in essays. Create brief, natural transition sentences that connect ideas seamlessly. If sections already flow well, return "NONE"."""
         
         # Get end of current and start of next section
         current_end = current_section[-300:] if len(current_section) > 300 else current_section
         next_start = next_section[:300] if len(next_section) > 300 else next_section
         
-        user_message = f"""
-        Create a brief transition sentence between these two essay sections.
-        Only add a transition if needed - if they already flow well, return "NONE".
+        user_message = f"""Create a brief transition between these sections. Return "NONE" if they already flow well.
+
+Current section ends with:
+...{current_end}
+
+Next section begins with:
+{next_start}...
+
+Requirements:
+- Maximum 15 words
+- Natural and conversational
+- Avoid "Additionally" or "Furthermore"
+- Return "NONE" if sections connect smoothly
+
+Transition (or NONE):"""
         
-        Current section ends with:
-        ...{current_end}
-        
-        Next section begins with:
-        {next_start}...
-        
-        Requirements:
-        - Maximum 15 words
-        - Natural and conversational
-        - Avoid obvious transitions like "Additionally" or "Furthermore"
-        - Should feel like natural progression of thought
-        - Return "NONE" if sections already connect smoothly
-        
-        Transition sentence (or NONE):
-        """
-        
-        transition = await self.transition_llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        transition = transition.strip()
-        
-        # Don't use transition if model said none needed
-        if "NONE" in transition.upper() or len(transition.split()) > 20:
-            return ""
-        
-        return transition
+        try:
+            transition = await self.transition_llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            transition = transition.strip()
+            
+            # Don't use transition if model said none needed
+            if "NONE" in transition.upper() or len(transition.split()) > 20:
+                return ""
+            
+            return transition
+            
+        except Exception as e:
+            print(f"       [WARNING] Transition generation failed: {e}")
+            return ""  # Skip transition on error
     
     async def explain_approach(
         self,
@@ -402,34 +427,36 @@ class MultiDraftGenerator:
             Explanation of approach
         """
         
-        system_prompt = """
-        You are an expert scholarship strategist.
-        Explain essay writing strategies in clear, actionable terms for students.
-        """
+        system_prompt = """You are an expert scholarship strategist. Explain essay writing strategies in clear, actionable terms for students."""
         
-        user_message = f"""
-        Explain why the "{emphasis}" emphasis strategy is effective for this scholarship.
+        priorities = scholarship_profile.get('priorities', [])
+        top_values = ', '.join(priorities[:3]) if priorities else 'scholarship values'
         
-        SCHOLARSHIP:
-        Name: {scholarship_profile.get('name', 'N/A')}
-        Top Values: {', '.join(scholarship_profile.get('priorities', [])[:3])}
+        user_message = f"""Explain why the "{emphasis}" emphasis strategy is effective for this scholarship in 2-3 sentences.
+
+SCHOLARSHIP: {scholarship_profile.get('name', 'N/A')}
+Top Values: {top_values}
+
+EMPHASIS: {emphasis}
+
+Cover:
+- What this approach prioritizes
+- Why it's effective for this scholarship
+- What makes this version unique
+
+Keep it conversational and helpful."""
         
-        EMPHASIS STRATEGY: {emphasis}
-        
-        Provide a 2-3 sentence explanation covering:
-        - What this approach prioritizes
-        - Why it's effective for this specific scholarship
-        - What makes this version unique
-        
-        Keep it conversational and helpful for students comparing drafts.
-        """
-        
-        rationale = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return rationale.strip()
+        try:
+            rationale = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            return rationale.strip() if rationale else f"This draft emphasizes {emphasis} to align with scholarship values."
+            
+        except Exception as e:
+            print(f"       [WARNING] Rationale generation failed: {e}")
+            return f"This draft uses a {emphasis} approach to showcase relevant experiences."
     
     async def compare_drafts(
         self,
@@ -447,42 +474,66 @@ class MultiDraftGenerator:
             Comparison analysis with recommendation
         """
         
-        system_prompt = """
-        You are an expert scholarship reviewer.
-        Compare essay drafts objectively and provide actionable recommendations.
-        Return only valid JSON.
-        """
+        system_prompt = """You are an expert scholarship reviewer. Compare essay drafts objectively and provide actionable recommendations. Return ONLY valid JSON with no markdown."""
         
-        draft_texts = {d['version']: d['draft'] for d in drafts}
+        # Truncate drafts for comparison
+        draft_summaries = {}
+        for d in drafts:
+            draft_text = d['draft']
+            if len(draft_text) > 500:
+                draft_text = draft_text[:500] + "..."
+            draft_summaries[d['version']] = {
+                "emphasis": d['emphasis'],
+                "preview": draft_text,
+                "word_count": d['word_count']
+            }
         
-        user_message = f"""
-        Compare these scholarship essay drafts and recommend the strongest option.
-        
-        SCHOLARSHIP: {scholarship_profile.get('name', 'N/A')}
-        Values: {scholarship_profile.get('priorities', [])}
-        
-        DRAFTS:
-        {json.dumps(draft_texts, indent=2)}
-        
-        Provide analysis as JSON:
+        user_message = f"""Compare these scholarship essay drafts and recommend the strongest.
+
+SCHOLARSHIP: {scholarship_profile.get('name', 'N/A')}
+Values: {scholarship_profile.get('priorities', [])}
+
+DRAFTS:
+{json.dumps(draft_summaries, indent=2)}
+
+Return ONLY valid JSON (no markdown):
+{{
+    "recommended_version": 1,
+    "reasoning": "Why this draft is strongest",
+    "draft_comparisons": [
         {{
-            "recommended_version": 1,
-            "reasoning": "Why this draft is strongest",
-            "draft_comparisons": [
-                {{
-                    "version": 1,
-                    "strengths": ["strength 1", "strength 2"],
-                    "weaknesses": ["weakness 1"],
-                    "score": 8.5
-                }}
-            ],
-            "hybrid_suggestion": "Consider combining X from version 1 with Y from version 2"
+            "version": 1,
+            "strengths": ["strength 1", "strength 2"],
+            "weaknesses": ["weakness 1"],
+            "score": 8.5
         }}
-        """
+    ],
+    "hybrid_suggestion": "Consider combining X with Y"
+}}"""
         
-        comparison_json = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        return json.loads(comparison_json)
+        try:
+            comparison_json = await self.llm.call(
+                system_prompt=system_prompt,
+                user_message=user_message
+            )
+            
+            cleaned_json = self._clean_json_response(comparison_json)
+            return json.loads(cleaned_json)
+            
+        except Exception as e:
+            print(f"       [ERROR] Draft comparison failed: {e}")
+            # Return default comparison
+            return {
+                "recommended_version": 1,
+                "reasoning": "Unable to perform comparison",
+                "draft_comparisons": [
+                    {
+                        "version": d['version'],
+                        "strengths": [f"{d['emphasis']} emphasis"],
+                        "weaknesses": [],
+                        "score": 7.0
+                    }
+                    for d in drafts
+                ],
+                "hybrid_suggestion": "Review drafts manually to identify best elements from each version"
+            }
