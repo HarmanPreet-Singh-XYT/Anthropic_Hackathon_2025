@@ -74,37 +74,38 @@ export default function ApplicationPage() {
     }, [session_id, router]);
 
     const handleExportPDF = async () => {
-        if (!contentRef.current) return;
+        if (!resumeContent) return;
 
         setIsExporting(true);
         try {
-            const canvas = await html2canvas(contentRef.current, {
-                scale: 2,
-                backgroundColor: '#050505',
-                logging: false,
+            const res = await fetch("/api/export/markdown", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ markdown: resumeContent }),
             });
 
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
+            if (!res.ok) throw new Error("Failed to export PDF");
 
-            const imgWidth = 210;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
 
-            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-            pdf.save('scholarship-application.pdf');
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "resume.pdf";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
 
             setExportSuccess(true);
             setTimeout(() => setExportSuccess(false), 3000);
         } catch (error) {
-            console.error('Error exporting PDF:', error);
+            console.error("Error exporting PDF:", error);
         } finally {
             setIsExporting(false);
         }
     };
+
 
     const handleCopyResume = () => {
         if (!applicationData?.resume_optimizations) return;
