@@ -2,14 +2,18 @@
 langgraph>=0.2.0
 anthropic>=0.40.0
 tavily-python>=0.5.0
-firecrawl-py>=1.0.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
+fake-useragent>=1.4.0
+markdownify>=0.11.0
+google-api-python-client>=2.100.0
 
 # Vector Store and Embeddings
 chromadb>=0.5.0
 sentence-transformers>=3.0.0
 
 # PDF Processing
-PyPDF2>=3.0.0
+pypdf>=4.0.0
 
 # Web API Framework
 fastapi>=0.115.0

@@ -20,17 +20,7 @@ interface MatchData {
 }
 
 // --- Mock Data ---
-const MOCK_MATCH_DATA: MatchData = {
-    overall_score: 0.75,
-    status: 'strong_match',
-    components: [
-        { name: 'Leadership', score: 0.85, weight: 0.35 },
-        { name: 'Academic Excellence', score: 0.90, weight: 0.25 },
-        { name: 'Community Service', score: 0.60, weight: 0.25 },
-        { name: 'Innovation', score: 0.70, weight: 0.15 },
-    ],
-    gaps: ['Community Service']
-};
+// --- Mock Data Removed ---
 
 export default function MatchmakerPage() {
     const [matchData, setMatchData] = useState<MatchData | null>(null);
@@ -38,12 +28,56 @@ export default function MatchmakerPage() {
     const router = useRouter();
 
     // Load match data on mount
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const session_id = searchParams?.get('session');
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+    // Load match data on mount
     useEffect(() => {
-        // Simulate loading delay
-        setTimeout(() => {
-            setMatchData(MOCK_MATCH_DATA);
-        }, 300);
-    }, []);
+        if (!session_id) return;
+
+        const fetchData = async () => {
+            try {
+                const response = await fetch(`${API_URL}/api/workflow/status/${session_id}`);
+                if (!response.ok) throw new Error("Failed to fetch data");
+
+                const data = await response.json();
+
+                // Handle both "complete" and "waiting_for_input" statuses
+                if ((data.status === "complete" || data.status === "waiting_for_input") && data.result && data.result.matchmaker_results) {
+                    const results = data.result.matchmaker_results;
+
+                    // Map backend data to frontend structure
+                    const components: MatchComponent[] = Object.entries(results.weighted_values || {}).map(([name, weight]) => {
+                        // Find score for this component if available in keyword_match_details
+                        const detail = results.keyword_match_details?.[name];
+                        const score = detail ? detail.best_match_score : 0;
+
+                        return {
+                            name: name,
+                            score: score,
+                            weight: Number(weight)
+                        };
+                    });
+
+                    // Set match data even if components is empty (edge case: decoder failed)
+                    setMatchData({
+                        overall_score: results.match_score || 0,
+                        status: (results.match_score || 0) >= 0.8 ? 'strong_match' : (results.match_score || 0) >= 0.6 ? 'good_match' : 'needs_improvement',
+                        components: components,
+                        gaps: results.gaps || []
+                    });
+                } else if (data.status === "processing") {
+                    // Still processing, poll again
+                    setTimeout(fetchData, 2000);
+                }
+            } catch (e) {
+                console.error("Error fetching match data:", e);
+            }
+        };
+
+        fetchData();
+    }, [session_id]);
 
     // Animate overall score
     useEffect(() => {
@@ -255,7 +289,7 @@ export default function MatchmakerPage() {
                                                 </span>
                                             </div>
                                             <span className="text-zinc-400 font-medium tabular-nums">
-                                                {Math.round(component.score * 100)}%
+                                                {isNaN(component.score) ? '0' : Math.round(component.score * 100)}%
                                             </span>
                                         </div>
 
@@ -278,7 +312,7 @@ export default function MatchmakerPage() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 1.4 }}
-                            onClick={() => router.push('/ai-help')}
+                            onClick={() => router.push(`/ai-help?session=${session_id}`)}
                             className="w-full h-12 rounded-xl font-medium text-base flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10 transition-all duration-300"
                         >
                             Continue to AI Help <ArrowRight className="w-4 h-4" />

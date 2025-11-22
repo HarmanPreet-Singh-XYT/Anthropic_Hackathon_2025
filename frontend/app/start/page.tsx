@@ -80,67 +80,67 @@ export default function StartPage() {
         setSuccess(null);
 
         try {
-            // Step 1: Upload resume (if provided)
+            // Create FormData for the workflow endpoint
+            const formData = new FormData();
+            formData.append('scholarship_url', url);
             if (file) {
-                const response = await uploadResume(file);
-
-                setSuccess({
-                    message: response.message,
-                    chunks: response.chunks_stored
-                });
+                formData.append('resume_file', file);
             }
 
-            // Step 2: Start Scout workflow (if URL provided)
-            if (url) {
-                const scoutFormData = new FormData();
-                scoutFormData.append('scholarship_url', url);
+            // Step 1: Start Workflow
+            const response = await fetch(`${API_URL}/api/workflow/start`, {
+                method: 'POST',
+                body: formData,
+            });
 
-                const scoutResponse = await fetch(`${API_URL}/api/scout/start`, {
-                    method: 'POST',
-                    body: scoutFormData,
-                });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to start workflow');
+            }
 
-                if (!scoutResponse.ok) {
-                    throw new Error('Failed to start Scout workflow');
+            const { session_id } = await response.json();
+
+            // Step 2: Poll for completion
+            let completed = false;
+            let pollCount = 0;
+            const maxPolls = 60; // 2 minutes timeout (2s interval)
+
+            while (!completed && pollCount < maxPolls) {
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2s
+                pollCount++;
+
+                const statusResponse = await fetch(
+                    `${API_URL}/api/workflow/status/${session_id}`
+                );
+
+                if (!statusResponse.ok) {
+                    throw new Error('Failed to check workflow status');
                 }
 
-                const { session_id } = await scoutResponse.json();
+                const statusData = await statusResponse.json();
 
-                // Step 3: Poll for completion
-                let completed = false;
+                if (statusData.status === 'processing') {
+                    // Continue polling
+                    continue;
 
-                while (!completed) {
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2s
+                } else if (statusData.status === 'complete' || statusData.status === 'waiting_for_input') {
+                    completed = true;
+                    setSuccess({
+                        message: "Analysis complete!",
+                        chunks: 0 // Not relevant for this flow
+                    });
 
-                    const statusResponse = await fetch(
-                        `${API_URL}/api/scout/status/${session_id}`
-                    );
+                    // Navigate to results
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    router.push(`/matchmaker?session=${session_id}`);
 
-                    if (!statusResponse.ok) {
-                        throw new Error('Failed to check Scout status');
-                    }
-
-                    const statusData = await statusResponse.json();
-
-                    if (statusData.status === 'processing') {
-                        // Continue polling
-                        continue;
-
-                    } else if (statusData.status === 'complete') {
-                        completed = true;
-
-                        // Navigate to results
-                        await new Promise(resolve => setTimeout(resolve, 800));
-                        router.push(`/matchmaker?session=${session_id}`);
-
-                    } else if (statusData.status === 'error') {
-                        throw new Error(statusData.error || 'Scout workflow failed');
-                    }
+                } else if (statusData.status === 'error') {
+                    throw new Error(statusData.error || 'Workflow failed');
                 }
-            } else if (file && !url) {
-                // Only resume uploaded, navigate to matchmaker
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                router.push('/matchmaker');
+            }
+
+            if (!completed) {
+                throw new Error("Workflow timed out");
             }
 
         } catch (err) {

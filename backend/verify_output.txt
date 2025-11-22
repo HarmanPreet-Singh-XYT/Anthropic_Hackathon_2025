@@ -1,0 +1,45 @@
+Testing Scout Agent...
+✓ Scout Agent initialized (Custom Pipeline)
+✓ Agent initialized
+Testing scrape of: https://www.coca-colascholarsfoundation.org/apply/
+✓ Fetch successful. Markdown length: 6339
+Preview:
+Apply to be a Coke Scholar - $20,000 College Scholarship
+
+ 
+
+See the list of our Semifinalists for the 2026 Coke Scholars Program $20,000 scholarship!
+
+The Coca-Cola Scholars Foundation supports more ...
+
+Running full Scout workflow...
+============================================================
+🔍 Scout Agent: Starting intelligence gathering (Custom Pipeline)...
+============================================================
+
+[STEP 1] Scraping official page...
+  → Extracting scholarship data from: https://www.coca-colascholarsfoundation.org/apply/
+    [ERROR] LLM Extraction failed: Anthropic API call failed: Error code: 404 - {'type': 'error', 'error': {'type': 'not_found_error', 'message': 'model: claude-3-5-sonnet-20240620'}, 'request_id': 'req_011CVNJETZG7Frm96hXEdrMw'}
+  ✓ Extracted: Unknown Scholarship
+  ✓ Identified: Unknown Scholarship
+
+[STEP 2] Starting deep search for 'Unknown Scholarship'...
+  → Searching for past winner essays/resumes...
+  → Searching for scholarship guidance and insights...
+    [ERROR] Fetch failed for https://www.sciencedirect.com/science/article/pii/S0743016721003582: 403 Client Error: Forbidden for url: https://www.sciencedirect.com/science/article/pii/S0743016721003582
+    [ERROR] Fetch failed for https://www.quora.com/I-want-to-go-to-an-Ivy-League-University-but-my-family-is-poor-what-should-I-do: 403 Client Error: Forbidden for url: https://www.quora.com/I-want-to-go-to-an-Ivy-League-University-but-my-family-is-poor-what-should-I-do
+    [ERROR] Fetch failed for https://ninercommons.charlotte.edu/record/1857/files/McElveen_uncc_0694N_13141.pdf: maximum recursion depth exceeded
+    [ERROR] Fetch failed for https://www.fm.gov.lv/lv/media/16119/download?attachment: maximum recursion depth exceeded
+    [ERROR] Fetch failed for https://docs.lib.purdue.edu/cgi/viewcontent.cgi?article=2712&context=open_access_dissertations: maximum recursion depth exceeded
+    [ERROR] Fetch failed for https://www.sciencedirect.com/science/article/pii/S0743016721003582: 403 Client Error: Forbidden for url: https://www.sciencedirect.com/science/article/pii/S0743016721003582
+    [ERROR] Fetch failed for https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/fer3.11: 403 Client Error: Forbidden for url: https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/fer3.11
+    [ERROR] Fetch failed for https://www.quora.com/I-come-from-a-low-income-family-and-I-wish-to-go-into-any-one-of-the-Ivy-Leagues-What-should-I-start-doing-from-10th-standard-to-get-into-my-dream-university-Is-it-possible-for-me-to-get-accepted: 403 Client Error: Forbidden for url: https://www.quora.com/I-come-from-a-low-income-family-and-I-wish-to-go-into-any-one-of-the-Ivy-Leagues-What-should-I-start-doing-from-10th-standard-to-get-into-my-dream-university-Is-it-possible-for-me-to-get-accepted
+  ✓ Found 0 insights
+  ✓ Found 0 validated winner items
+
+============================================================
+✅ Scout Agent: Intelligence gathering complete!
+============================================================
+
+✓ Workflow complete!
+Scholarship Name: Unknown Scholarship

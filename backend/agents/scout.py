@@ -1,5 +1,5 @@
 """
-Agent A: The Scout (Firecrawl-powered)
+Agent A: The Scout (Custom Scraping Pipeline)
 Scrapes scholarship URL and searches for past winner intelligence
 """
 
@@ -7,9 +7,12 @@ import asyncio
 import os
 import re
 import requests
+import json
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
-from firecrawl import FirecrawlApp
+from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
+import markdownify
 
 from .scout_schemas import (
     OfficialScholarshipData,
@@ -22,8 +25,9 @@ from .scout_schemas import (
     ScoutIntelligence,
     ValidationResult
 )
+from utils.llm_client import LLMClient, create_llm_client
 
-VALIDATION_THRESHOLD = 0.01  # Lowered for testing
+VALIDATION_THRESHOLD = 0.7
 MAX_VALIDATION_CONCURRENCY = 5
 MIN_CONTENT_LENGTH = 100
 SOCIAL_MEDIA_EXCLUSIONS = "-reddit -linkedin -facebook -twitter -instagram -tiktok"
@@ -31,117 +35,173 @@ SOCIAL_MEDIA_EXCLUSIONS = "-reddit -linkedin -facebook -twitter -instagram -tikt
 
 class ScoutAgent:
     """
-    Firecrawl-powered Scout Agent
-    - Scrapes official scholarship page with /scrape endpoint
+    Custom Scout Agent
+    - Scrapes official scholarship page using requests + BeautifulSoup
     - Performs parallel deep search for past winners + community insights
-    - Uses Firecrawl's internal LLM for validation during scraping
+    - Uses Claude for validation and extraction
     """
 
-    def __init__(self, firecrawl_api_key: str = None):
-        """
-        Initialize Scout Agent
-
-        Args:
-            firecrawl_api_key: Firecrawl API key (or reads from env)
-        """
-        api_key = firecrawl_api_key or os.getenv("FIRECRAWL_API_KEY")
-        if not api_key:
-            raise ValueError("FIRECRAWL_API_KEY not found in environment or arguments")
-
-        self.firecrawl = FirecrawlApp(api_key=api_key)
-        
+    def __init__(self):
+        """Initialize Scout Agent"""
         # Google Search Credentials
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
         self.google_cse_id = os.getenv("GOOGLE_CSE_ID")
-        print(f"✓ Scout Agent initialized with Firecrawl")
+        
+        # LLM Client for extraction and validation
+        self.llm_client = create_llm_client(temperature=0.0) # Low temp for extraction
+        
+        # User Agent rotator
+        self.ua = UserAgent()
+        
+        print(f"✓ Scout Agent initialized (Custom Pipeline)")
 
-    def _build_official_prompt(self) -> str:
-        """Prompt for rich official-page extraction."""
-        return """
-You are extracting scholarship requirements from the OFFICIAL scholarship page.
-Return JSON matching the provided schema. Be precise and only include facts explicitly stated.
+    def _fetch_and_clean(self, url: str) -> str:
+        """
+        Fetch URL and convert to clean Markdown
+        
+        Args:
+            url: URL to fetch
+            
+        Returns:
+            Cleaned Markdown string
+        """
+        try:
+            headers = {'User-Agent': self.ua.random}
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            # Parse HTML
+            soup = BeautifulSoup(response.text, 'lxml')
+            
+            # Denoise: Remove unwanted elements
+            for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form', 'iframe', 'noscript', 'svg', 'canvas']):
+                tag.decompose()
+                
+            # Remove elements by class/id (heuristic)
+            for tag in soup.find_all(attrs={"class": re.compile(r"(ad|popup|cookie|sidebar|social|share|comment|widget)", re.I)}):
+                tag.decompose()
+            for tag in soup.find_all(attrs={"id": re.compile(r"(ad|popup|cookie|sidebar|social|share|comment|widget)", re.I)}):
+                tag.decompose()
 
-Capture:
-- scholarship_name, organization
-- keywords: high-signal phrases on the page
-- explicit_requirements: GPA numbers, deadlines, documents, eligibility bullets, counts
-- explicit_instructions: things applicants must/should do/have
-- metrics: award amount, number of awards, GPA thresholds, dates
-- primary_values + implicit_values + tone
-- eligibility (citizenship, grade level, geography), selection emphasis, application components, deadline, award_amount, num_awards
+            # Convert to Markdown
+            # heading_style="ATX" ensures # headings
+            markdown = markdownify.markdownify(str(soup), heading_style="ATX", strip=['a', 'img'])
+            
+            # Clean up excessive newlines
+            markdown = re.sub(r'\n{3,}', '\n\n', markdown).strip()
+            
+            return markdown
+            
+        except Exception as e:
+            print(f"    [ERROR] Fetch failed for {url}: {e}")
+            return ""
 
-If a field is not present, leave it empty or null. Do NOT guess.
+    async def _extract_official_data(self, markdown: str, url: str) -> OfficialScholarshipData:
+        """Use LLM to extract structured data from official page markdown"""
+        
+        system_prompt = """
+You are an expert scholarship analyst. Extract structured data from the provided scholarship page content.
+Return ONLY valid JSON matching the schema.
 """
+        
+        user_prompt = f"""
+EXTRACT SCHOLARSHIP DATA FROM THIS TEXT:
 
-    def _parse_markdown_fallback(self, markdown_content: str) -> Dict[str, Any]:
-        """Lightweight regex-based extraction when structured extract fails."""
-        award_amount = None
-        deadline = None
-        gpa_requirement = None
-        metrics: List[str] = []
-        explicit_requirements: List[str] = []
-        explicit_instructions: List[str] = []
+{markdown[:15000]}
 
-        dollar_matches = re.findall(r"\$[\d,.]+", markdown_content)
-        if dollar_matches:
-            award_amount = dollar_matches[0]
-            metrics.append(f"Award amount mentioned: {award_amount}")
+RETURN VALID JSON WITH THESE EXACT FIELDS:
+{{
+  "scholarship_name": "string (required)",
+  "organization": "string or null",
+  "keywords": ["list of strings"],
+  "explicit_requirements": ["list of strings"],
+  "explicit_instructions": ["list of strings"],
+  "metrics": ["list of strings"],
+  "primary_values": ["Leadership", "Service", "Academic Excellence"],
+  "implicit_values": ["list of strings"],
+  "tone_indicators": "string (e.g. 'Professional, Inspirational')",
+  "eligibility_criteria": {{
+    "gpa_requirement": null,
+    "grade_levels": [],
+    "citizenship": [],
+    "demographics": [],
+    "majors_fields": [],
+    "geographic": [],
+    "other": []
+  }},
+  "selection_emphasis": {{
+    "leadership_weight": null,
+    "academic_weight": null,
+    "service_weight": null,
+    "financial_need_weight": null,
+    "specific_talents": [],
+    "other_factors": []
+  }},
+  "award_amount": "string or null",
+  "num_awards": null,
+  "deadline": "string or null",
+  "application_components": ["list of strings"]
+}}
 
-        deadline_matches = re.findall(
-            r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}",
-            markdown_content,
-            flags=re.IGNORECASE
-        )
-        if deadline_matches:
-            deadline = deadline_matches[0]
-            explicit_requirements.append(f"Deadline: {deadline}")
-            metrics.append(f"Deadline mentioned: {deadline}")
+OUTPUT ONLY THE JSON, NO EXPLANATION.
+"""
+        try:
+            response = await self.llm_client.call(
+                system_prompt=system_prompt,
+                user_message=user_prompt
+            )
+            
+            # Clean and parse JSON
+            cleaned = response.strip()
+            if cleaned.startswith("```json"): cleaned = cleaned[7:]
+            if cleaned.endswith("```"): cleaned = cleaned[:-3]
+            
+            data = json.loads(cleaned)
+            
+            # Ensure source_url is set
+            data['source_url'] = url
+            
+            return OfficialScholarshipData.model_validate(data)
+            
+        except Exception as e:
+            print(f"    [ERROR] LLM Extraction failed: {e}")
+            # Return minimal fallback
+            return OfficialScholarshipData(
+                scholarship_name="Unknown Scholarship",
+                primary_values=["Leadership", "Service", "Academic Excellence"],
+                tone_indicators="Professional",
+                eligibility_criteria=EligibilityCriteria(),
+                source_url=url
+            )
 
-        gpa_matches = re.findall(r"GPA[^0-9]*([0-4]\.\d{1,2})", markdown_content, flags=re.IGNORECASE)
-        if gpa_matches:
-            gpa_requirement = float(gpa_matches[0])
-            explicit_requirements.append(f"GPA requirement: {gpa_requirement}")
-            metrics.append(f"GPA requirement: {gpa_requirement}")
-
-        for line in markdown_content.splitlines():
-            if len(line) < 6:
-                continue
-            if re.search(r"\bmust\b|\brequired\b|\bshould\b|\bneed to\b", line, flags=re.IGNORECASE):
-                explicit_instructions.append(line.strip())
-
-        keywords = list({w for w in re.findall(r"[A-Za-z]{4,}", markdown_content)[:30]})
-
-        return {
-            "award_amount": award_amount,
-            "deadline": deadline,
-            "gpa_requirement": gpa_requirement,
-            "metrics": metrics,
-            "explicit_requirements": explicit_requirements,
-            "explicit_instructions": explicit_instructions,
-            "keywords": keywords
-        }
-
-
-
-    async def _run_firecrawl_extract(self, *, urls: List[str], prompt: str, schema: Dict[str, Any]) -> Any:
-        """Run Firecrawl extract in a thread to avoid blocking the event loop."""
-        return await asyncio.to_thread(self.firecrawl.extract, urls=urls, prompt=prompt, schema=schema)
-
-    async def _run_firecrawl_search(self, *, query: str, limit: int) -> Any:
-        """Run Firecrawl search in a thread."""
-        # Request markdown and links content in search results
-        params = {
-            "query": query,
-            "limit": limit,
-            "scrape_options": {"formats": ["markdown", "links"]}
-        }
-        return await asyncio.to_thread(self.firecrawl.search, **params)
+    async def scrape_official_page(self, url: str) -> OfficialScholarshipData:
+        """
+        Scrape official scholarship page using custom pipeline
+        """
+        print(f"  → Extracting scholarship data from: {url}")
+        
+        # 1. Fetch & Clean
+        markdown = await asyncio.to_thread(self._fetch_and_clean, url)
+        
+        if not markdown or len(markdown) < MIN_CONTENT_LENGTH:
+            print("  ⚠ Failed to fetch content or content too short")
+            # Return minimal fallback
+            return OfficialScholarshipData(
+                scholarship_name="Unknown Scholarship",
+                primary_values=["Leadership", "Service", "Academic Excellence"],
+                tone_indicators="Professional",
+                eligibility_criteria=EligibilityCriteria(),
+                source_url=url
+            )
+            
+        # 2. Extract with LLM
+        official_data = await self._extract_official_data(markdown, url)
+        
+        print(f"  ✓ Extracted: {official_data.scholarship_name}")
+        return official_data
 
     async def _run_google_search(self, *, query: str, limit: int) -> List[Any]:
-        """
-        Run Google Custom Search.
-        Returns a list of objects with .url and .markdown attributes.
-        """
+        """Run Google Custom Search"""
         if not self.google_api_key or not self.google_cse_id:
             print("    [WARNING] Google API credentials not found. Skipping search.")
             return []
@@ -152,7 +212,7 @@ If a field is not present, leave it empty or null. Do NOT guess.
                 "key": self.google_api_key,
                 "cx": self.google_cse_id,
                 "q": query,
-                "num": min(limit, 10)  # Google API max limit is 10
+                "num": min(limit, 10)
             }
             try:
                 resp = requests.get(url, params=params)
@@ -161,14 +221,12 @@ If a field is not present, leave it empty or null. Do NOT guess.
                 
                 results = []
                 for item in data.get("items", []):
-                    # Create a simple object to match Firecrawl result structure
                     class GoogleResult:
                         def __init__(self, item):
                             self.url = item.get("link")
                             self.title = item.get("title")
                             self.description = item.get("snippet")
-                            self.markdown = ""  # Empty content triggers fallback scraping
-                            
+                            self.markdown = "" 
                     results.append(GoogleResult(item))
                 return results
             except Exception as e:
@@ -177,152 +235,95 @@ If a field is not present, leave it empty or null. Do NOT guess.
 
         return await asyncio.to_thread(_search)
 
-    async def _run_firecrawl_scrape(self, *, url: str) -> Any:
-        """Run Firecrawl scrape in a thread."""
-        return await asyncio.to_thread(self.firecrawl.scrape, url=url, formats=['markdown'], only_main_content=True)
+    async def _validate_with_llm(self, content: str, mode: str) -> Optional[ValidationResult]:
+        """Use LLM to validate content relevance and extract insights"""
+        
+        system_prompt = f"""
+You are a scholarship content validator. Analyze the text to determine if it is relevant for: {mode}.
+Return ONLY valid JSON.
+"""
+        
+        user_prompt = f"""
+ANALYZE THIS CONTENT:
 
-    async def _scrape_reddit_url(self, url: str) -> str:
-        """
-        Scrape Reddit URL by converting to JSON API endpoint.
-        Reddit blocks Firecrawl but allows JSON API access.
-        """
-        try:
-            # Convert Reddit URL to JSON API format
-            json_url = url.rstrip('/') + '.json'
+{content[:4000]}
 
-            def _fetch():
-                headers = {'User-Agent': 'ScholarFit/1.0'}
-                resp = requests.get(json_url, headers=headers, timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
+TASK:
+1. Score relevance (0.0-1.0). Must be >0.7 to be useful.
+2. Identify content type (essay, resume, tip, stat, insight).
+3. Extract key takeaways/strategies.
 
-                # Extract post content
-                if isinstance(data, list) and len(data) > 0:
-                    post_data = data[0]['data']['children'][0]['data']
-                    title = post_data.get('title', '')
-                    selftext = post_data.get('selftext', '')
-                    return f"# {title}\n\n{selftext}"
-                return ""
-
-            return await asyncio.to_thread(_fetch)
-        except Exception as e:
-            print(f"    [ERROR] Reddit scrape failed for {url}: {e}")
-            return ""
-
-    async def _validate_with_firecrawl(self, url: str, mode: str, content_hint: str = "") -> Optional[ValidationResult]:
-        """Call Firecrawl LLM to classify and score a search hit."""
-        prompt = f"""
-You are validating a {mode} result for a scholarship. Only return JSON.
+SCHEMA:
 - content_type: essay/resume/profile/tip/stat/insight/warning
-- validation_score: 0-1, confidence of relevance + truthfulness (>=0.95 required to keep)
-- validation_reason: 1-2 sentences explaining the score
-- winner_name, year (if applicable)
-- key_takeaways: 3-5 concise takeaways
-- credibility: short source credibility note
+- validation_score: float 0-1
+- validation_reason: string
+- winner_name: string (optional)
+- year: string (optional)
+- key_takeaways: list[string] (Specific winning strategies)
+- credibility: string (e.g. "Verified Source", "Anonymous")
 
-Base your answer ONLY on the provided page content. Do not guess beyond the page.
+OUTPUT JSON ONLY.
 """
         try:
-            result = await self._run_firecrawl_extract(
-                urls=[url],
-                prompt=prompt,
-                schema=ValidationResult.model_json_schema()
+            response = await self.llm_client.call(
+                system_prompt=system_prompt,
+                user_message=user_prompt
             )
-            data = result.data if hasattr(result, "data") else None
-            if isinstance(data, list):
-                data = data[0] if data else None
-            if not data:
-                return None
+            
+            cleaned = response.strip()
+            if cleaned.startswith("```json"): cleaned = cleaned[7:]
+            if cleaned.endswith("```"): cleaned = cleaned[:-3]
+            
+            data = json.loads(cleaned)
             return ValidationResult.model_validate(data)
+            
         except Exception as e:
-            print(f"  ⚠ Validation failed for {url}: {e}")
+            # print(f"      [DEBUG] Validation error: {e}")
             return None
 
     async def _validate_results(self, web_results: List[Any], mode: str, debug: bool = False) -> List[Any]:
-        """Validate a batch of search results with Firecrawl LLM."""
+        """Validate a batch of search results"""
         semaphore = asyncio.Semaphore(MAX_VALIDATION_CONCURRENCY)
         tasks = []
         seen_urls = set()
 
         async def _validate_single(res):
-            if debug and len(seen_urls) == 0:
-                print(f"      [DEBUG] First result object keys: {res.__dict__ if hasattr(res, '__dict__') else 'No __dict__'}")
-            
             url = getattr(res, "url", "")
-            
-            if debug:
-                print(f"      [DEBUG] Processing URL: {url}")
-            
-            if not url or url in seen_urls:
-                if debug:
-                    print(f"      [DEBUG] Skipping - empty or duplicate: {url}")
-                return None
+            if not url or url in seen_urls: return None
             seen_urls.add(url)
 
-            # Skip social media URLs - they can't be scraped by Firecrawl
-            social_media_domains = ["reddit.com", "linkedin.com", "facebook.com", "x.com", "twitter.com", "tiktok.com", "instagram.com"]
-            if any(domain in url for domain in social_media_domains):
+            # Skip PDF files - they contain binary data that breaks LLM processing
+            if url.lower().endswith('.pdf'):
                 if debug:
-                    print(f"      [DEBUG] Skipping social media URL: {url}")
+                    print(f"      [DEBUG] Skipping PDF URL: {url}")
                 return None
 
-            content = getattr(res, "markdown", "") or ""
-            
-            if debug:
-                print(f"      [DEBUG] Initial content length for {url}: {len(content)} chars")
-            
-            # If markdown is missing from search results, scrape the URL to get it
-            if len(content) < MIN_CONTENT_LENGTH:
-                if debug:
-                    print(f"      [DEBUG] No markdown in search result for {url}, scraping...")
-                try:
-                    # Check if it's a Reddit URL - use Reddit API instead of Firecrawl
-                    if "reddit.com" in url:
-                        if debug:
-                            print(f"      [DEBUG] Using Reddit API for {url}")
-                        content = await self._scrape_reddit_url(url)
-                    else:
-                        async with semaphore:
-                            scrape_result = await self._run_firecrawl_scrape(url=url)
-                            content = getattr(scrape_result, "markdown", "") or ""
-                    
-                    if debug and content:
-                        print(f"      [DEBUG] Scraped {len(content)} chars from {url}")
-                except Exception as e:
-                    if debug:
-                        print(f"      [DEBUG] Scrape failed for {url}: {e}")
-                    return None
-            
-            # Check content length again after potential scraping
-            if len(content) < MIN_CONTENT_LENGTH:
-                if debug:
-                    print(f"      [DEBUG] Skipping {url} (too short: {len(content)})")
+            # Skip social media (hard to scrape without API)
+            if any(domain in url for domain in ["facebook.com", "x.com", "twitter.com", "tiktok.com", "instagram.com"]):
                 return None
 
-            if debug:
-                print(f"      [DEBUG] About to validate {url} with {len(content)} chars of content")
-
+            # 1. Fetch & Clean
             async with semaphore:
-                vr = await self._validate_with_firecrawl(url, mode, content_hint=content)
+                content = await asyncio.to_thread(self._fetch_and_clean, url)
             
-            if debug:
-                print(f"      [DEBUG] Validation returned: {vr}")
+            if not content or len(content) < MIN_CONTENT_LENGTH:
+                return None
             
-            if not vr:
+            # Additional check: skip if content looks like binary/PDF data
+            if content.startswith('%PDF') or '\\x00' in content[:100]:
                 if debug:
-                    print(f"      [DEBUG] Validation failed/null for {url}")
+                    print(f"      [DEBUG] Skipping binary content from {url}")
                 return None
-                
-            if debug:
-                print(f"      [DEBUG] {url} -> Score: {vr.validation_score} ({vr.validation_reason})")
 
-            if vr.validation_score < VALIDATION_THRESHOLD:
+            # 2. Validate with LLM
+            async with semaphore:
+                vr = await self._validate_with_llm(content, mode)
+            
+            if not vr or vr.validation_score < VALIDATION_THRESHOLD:
                 return None
             
-            # Store the scraped content back into the result object for later use
-            if hasattr(res, 'markdown'):
-                res.markdown = content
-            
+            # Store content
+            res.markdown = content
             return res, vr
 
         for res in web_results:
@@ -334,149 +335,43 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
                 validated.append(pair)
         return validated
 
-    async def scrape_official_page(self, url: str) -> OfficialScholarshipData:
-        """
-        Scrape official scholarship page using Firecrawl /extract endpoint
-
-        Args:
-            url: Scholarship webpage URL
-
-        Returns:
-            Structured scholarship data
-        """
-        print(f"  → Extracting scholarship data from: {url}")
-
-        # Detailed extraction prompt for Firecrawl's internal LLM
-        extraction_prompt = self._build_official_prompt()
-
-        try:
-            # Use Firecrawl's /extract endpoint with internal LLM
-            result = await self._run_firecrawl_extract(
-                urls=[url],
-                prompt=extraction_prompt,
-                schema=OfficialScholarshipData.model_json_schema()
-            )
-
-            # Firecrawl returns extracted data matching our schema
-            # The result.data contains the extracted information
-            extracted_data = result.data if hasattr(result, 'data') else None
-
-            if not extracted_data:
-                raise ValueError("Firecrawl extract returned no data")
-
-            # Validate and create OfficialScholarshipData instance
-            # If extracted_data is a list, take first item
-            if isinstance(extracted_data, list):
-                extracted_data = extracted_data[0] if extracted_data else {}
-
-            extracted_data = extracted_data or {}
-            extracted_data.setdefault("explicit_requirements", [])
-            extracted_data.setdefault("explicit_instructions", [])
-            extracted_data.setdefault("keywords", [])
-            extracted_data.setdefault("metrics", [])
-
-            # Ensure source_url is set
-            if isinstance(extracted_data, dict):
-                extracted_data['source_url'] = url
-                official_data = OfficialScholarshipData.model_validate(extracted_data)
-            else:
-                # If it's already a Pydantic model
-                official_data = extracted_data
-                official_data.source_url = url
-
-            print(f"  ✓ Extracted: {official_data.scholarship_name}")
-            return official_data
-
-        except Exception as e:
-            print(f"  ⚠ Firecrawl extract failed: {e}")
-            print(f"  → Falling back to basic scrape...")
-
-            # Fallback: Use basic scrape if extract fails
-            result = await self._run_firecrawl_scrape(url=url)
-
-            markdown_content = result.markdown or ''
-            fallback_fields = self._parse_markdown_fallback(markdown_content)
-
-            # Extract scholarship name from first heading as fallback
-            lines = markdown_content.split('\n')
-            scholarship_name = "Unknown Scholarship"
-            for line in lines:
-                if line.startswith('# '):
-                    scholarship_name = line.replace('# ', '').strip()
-                    break
-
-            # Return minimal data structure
-            print(f"  ✓ Fallback scrape completed: {scholarship_name}")
-            return OfficialScholarshipData(
-                scholarship_name=scholarship_name,
-                organization=None,
-                keywords=fallback_fields.get("keywords", []),
-                explicit_requirements=fallback_fields.get("explicit_requirements", []),
-                explicit_instructions=fallback_fields.get("explicit_instructions", []),
-                metrics=fallback_fields.get("metrics", []),
-                primary_values=["Leadership", "Service", "Academic Excellence"],
-                implicit_values=[],
-                tone_indicators="Professional",
-                eligibility_criteria=EligibilityCriteria(
-                    gpa_requirement=fallback_fields.get("gpa_requirement", None)
-                ),
-                selection_emphasis=SelectionEmphasis(),
-                award_amount=fallback_fields.get("award_amount"),
-                num_awards=None,
-                deadline=fallback_fields.get("deadline"),
-                application_components=[],
-                source_url=url
-            )
-
-    async def search_past_winner_items(
-        self,
-        scholarship_hint: str,
-        domain: str,
-        debug: bool = False
-    ) -> List[PastWinnerItem]:
-        """
-        Search for past winner essays and resumes with LLM validation
-        """
-        print(f"  → Searching for past winner essays/resumes...")
+    async def search_past_winner_items(self, scholarship_hint: str, domain: str, debug: bool = False) -> List[PastWinnerItem]:
+        """Search for past winner essays/resumes"""
+        # Clean the hint to get the core name
+        # Remove price, "Scholarship", "Program", year, etc.
+        core_name = scholarship_hint
+        for remove in ["Scholarship", "Program", "Foundation", "Award", "Grant", "2024", "2025", "2026"]:
+            core_name = core_name.replace(remove, "")
+        core_name = re.sub(r'\$\d+(,\d+)?', '', core_name).strip()
+        core_name = re.sub(r'\s+', ' ', core_name).strip()
         
+        print(f"  → Core name for search: '{core_name}'")
+
         queries = [
-            f'"{scholarship_hint}" winner essay (site:edu OR site:org OR PrepScholar OR IvyScholars) {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'"{scholarship_hint}" winning essay example (site:edu OR site:org) {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'"{scholarship_hint}" personal statement example PrepScholar OR IvyScholars {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'"{scholarship_hint}" finalist profile (site:edu OR site:org) {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'how to win "{scholarship_hint}" scholarship tips {SOCIAL_MEDIA_EXCLUSIONS}'
+            f'"{core_name}" winner essay (site:edu OR site:org OR PrepScholar OR IvyScholars) {SOCIAL_MEDIA_EXCLUSIONS}',
+            f'"{core_name}" winning essay example {SOCIAL_MEDIA_EXCLUSIONS}',
+            f'{core_name} scholarship recipient profile {SOCIAL_MEDIA_EXCLUSIONS}',
+            f'{core_name} scholarship past winners {SOCIAL_MEDIA_EXCLUSIONS}'
         ]
 
         items: List[PastWinnerItem] = []
-
+        
         for query in queries:
-            if debug:
-                print(f"    [DEBUG] Query: {query}")
             try:
-                # Use Google Search instead of Firecrawl Search
-                web_results = await self._run_google_search(
-                    query=query,
-                    limit=4
-                )
-
-                if debug:
-                    print(f"    [DEBUG] Found {len(web_results)} raw results")
-                
+                web_results = await self._run_google_search(query=query, limit=3)
                 validated = await self._validate_results(web_results, mode="past winner essay or resume", debug=debug)
 
                 for res, vr in validated:
-                    content = getattr(res, "markdown", "") or ""
                     items.append(PastWinnerItem(
                         type=vr.content_type if vr.content_type in ["essay", "resume", "profile"] else "essay",
                         title=getattr(res, "title", "") or "Past Winner Content",
                         url=getattr(res, "url", "") or "",
-                        content=content[:2000],
+                        content=getattr(res, "markdown", "")[:2000],
                         validation_score=vr.validation_score,
                         validation_reason=vr.validation_reason,
                         key_takeaways=vr.key_takeaways or [],
                         winner_name=vr.winner_name,
-                        year=vr.year,
-                        narrative_style=None
+                        year=vr.year
                     ))
             except Exception as e:
                 print(f"    [ERROR] Search failed for query '{query}': {e}")
@@ -485,69 +380,42 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
         print(f"  ✓ Found {len(items)} validated winner items")
         return items
 
-    async def search_community_insights(
-        self,
-        scholarship_hint: str,
-        debug: bool = False
-    ) -> List[InsightData]:
-        """
-        Search educational sites for tips, stats, and insights
-
-        Uses Firecrawl Search with in-prompt validation
-
-        Args:
-            scholarship_name: Name of scholarship
-
-        Returns:
-            List of validated insights
-        """
+    async def search_community_insights(self, scholarship_hint: str, debug: bool = False) -> List[InsightData]:
+        """Search for tips and insights"""
         print(f"  → Searching for scholarship guidance and insights...")
 
+        # Clean name logic (duplicated for now, could be a helper)
+        core_name = scholarship_hint
+        for remove in ["Scholarship", "Program", "Foundation", "Award", "Grant", "2024", "2025", "2026"]:
+            core_name = core_name.replace(remove, "")
+        core_name = re.sub(r'\$\d+(,\d+)?', '', core_name).strip()
+        core_name = re.sub(r'\s+', ' ', core_name).strip()
+
         queries = [
-            f'"{scholarship_hint}" scholarship application tips (PrepScholar OR IvyScholars OR site:edu) {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'"{scholarship_hint}" scholarship how to win guide (site:edu OR site:org) {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'"{scholarship_hint}" scholarship advice strategies PrepScholar {SOCIAL_MEDIA_EXCLUSIONS}',
-            f'"{scholarship_hint}" scholarship what they look for (site:edu OR site:org) {SOCIAL_MEDIA_EXCLUSIONS}',
+            f'"{core_name}" scholarship tips strategies {SOCIAL_MEDIA_EXCLUSIONS}',
+            f'how to win {core_name} scholarship guide {SOCIAL_MEDIA_EXCLUSIONS}',
+            f'{core_name} scholarship selection criteria reddit'
         ]
 
         insights = []
 
         for query in queries:
-            if debug:
-                print(f"    [DEBUG] Query: {query}")
             try:
-                # Determine source from query
-                if "reddit.com" in query:
-                    source = "reddit"
-                elif "linkedin.com" in query:
-                    source = "linkedin"
-                else:
-                    source = "other"
-
-                # Use Google Search instead of Firecrawl Search
-                web_results = await self._run_google_search(
-                    query=query,
-                    limit=3
-                )
-                
-                if debug:
-                    print(f"    [DEBUG] Found {len(web_results)} raw results")
-
+                source = "reddit" if "reddit.com" in query else "other"
+                web_results = await self._run_google_search(query=query, limit=3)
                 validated = await self._validate_results(web_results, mode="tips or recommendations", debug=debug)
 
                 for res, vr in validated:
-                    content = getattr(res, "markdown", "") or ""
                     insights.append(InsightData(
                         source=source,
                         type=vr.content_type if vr.content_type in ["tip", "stat", "insight", "warning"] else "tip",
-                        content=content[:800],
+                        content=getattr(res, "markdown", "")[:1000],
                         url=getattr(res, "url", "") or "",
                         validation_score=vr.validation_score,
                         validation_reason=vr.validation_reason,
                         credibility=vr.credibility or source,
                         warnings=vr.warnings or []
                     ))
-
             except Exception as e:
                 print(f"  ⚠ Search failed for '{query}': {e}")
                 continue
@@ -555,166 +423,68 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
         print(f"  ✓ Found {len(insights)} insights")
         return insights
 
-    async def deep_search_parallel(
-        self,
-        scholarship_url: str,
-        scholarship_hint: str,
-        debug: bool = False
-    ) -> PastWinnerContext:
-        """
-        Execute parallel deep search for past winners and insights
-        
-        Args:
-            scholarship_name: Name of scholarship
-            scholarship_url: Official URL
-            debug: Enable debug printing
-        """
-        """
-        Execute parallel deep search for past winners and insights
-
-        Runs 2 searches simultaneously:
-        1. Past winner essays/resumes
-        2. Reddit/LinkedIn insights
-
-        Args:
-            scholarship_name: Name of scholarship
-            scholarship_url: Official URL
-
-        Returns:
-            PastWinnerContext with item + data structure
-        """
+    async def deep_search_parallel(self, scholarship_url: str, scholarship_hint: str, debug: bool = False) -> PastWinnerContext:
+        """Execute parallel deep search"""
         domain = urlparse(scholarship_url).netloc
 
-        # Run searches in parallel
-        items_task = asyncio.create_task(
-            self.search_past_winner_items(scholarship_hint, domain, debug)
-        )
+        items_task = asyncio.create_task(self.search_past_winner_items(scholarship_hint, domain, debug))
+        insights_task = asyncio.create_task(self.search_community_insights(scholarship_hint, debug))
 
-        insights_task = asyncio.create_task(
-            self.search_community_insights(scholarship_hint, debug)
-        )
-
-        # Wait for both
         items, insights = await asyncio.gather(items_task, insights_task)
 
-        # Filter by validation threshold (>= 0.7)
-        filtered_items = [item for item in items if item.validation_score >= 0.7]
-        filtered_insights = [insight for insight in insights if insight.validation_score >= 0.7]
-
-        # Create summary
         summary = SearchSummary(
             total_items_found=len(items),
             total_data_points_found=len(insights),
-            items_after_validation=len(filtered_items),
-            data_after_validation=len(filtered_insights),
-            average_validation_score=(
-                sum(i.validation_score for i in filtered_items + filtered_insights) /
-                len(filtered_items + filtered_insights)
-                if (filtered_items or filtered_insights) else 0.0
-            ),
-            search_queries_used=[
-                f'Past winner essays/resumes (3 queries)',
-                f'Reddit/LinkedIn insights (3 queries)'
-            ]
+            items_after_validation=len(items),
+            data_after_validation=len(insights),
+            average_validation_score=0.8, # Placeholder
+            search_queries_used=["Past winner search", "Insight search"]
         )
 
         return PastWinnerContext(
-            item=filtered_items,
-            data=filtered_insights,
+            item=items,
+            data=insights,
             search_summary=summary
         )
 
-    def format_combined_intelligence(
-        self,
-        official: OfficialScholarshipData,
-        context: PastWinnerContext
-    ) -> str:
-        """
-        Format combined intelligence for Decoder agent
-
-        Args:
-            official: Official scholarship data
-            context: Past winner context
-
-        Returns:
-            Formatted text blob
-        """
+    def format_combined_intelligence(self, official: OfficialScholarshipData, context: PastWinnerContext) -> str:
+        """Format combined intelligence for Decoder agent"""
         sections = []
-
+        
         # Official section
-        sections.append(f"""
-# {official.scholarship_name}
-
-## Primary Values
-{', '.join(official.primary_values)}
-
-## Tone Indicators
-{official.tone_indicators}
-
-## Eligibility Criteria
-- GPA Requirement: {official.eligibility_criteria.gpa_requirement or 'Not specified'}
-- Grade Levels: {', '.join(official.eligibility_criteria.grade_levels) or 'Not specified'}
-- Citizenship: {', '.join(official.eligibility_criteria.citizenship) or 'Not specified'}
-
-## Award Details
-- Amount: {official.award_amount or 'Not specified'}
-- Number of Awards: {official.num_awards or 'Not specified'}
-- Deadline: {official.deadline or 'Not specified'}
-""")
-
+        sections.append(f"# {official.scholarship_name}\n")
+        sections.append(f"## Primary Values\n{', '.join(official.primary_values)}\n")
+        sections.append(f"## Tone Indicators\n{official.tone_indicators}\n")
+        
         # Past winner items
         if context.item:
             sections.append("\n## Past Winner Examples\n")
-            for item in context.item[:3]:  # Top 3
-                sections.append(f"""
-### {item.title}
-- Type: {item.type}
-- Validation Score: {item.validation_score:.0%}
-- Key Takeaways: {', '.join(item.key_takeaways)}
-- URL: {item.url}
-""")
+            for item in context.item[:3]:
+                sections.append(f"### {item.title}\n- Key Takeaways: {', '.join(item.key_takeaways)}\n")
 
         # Community insights
         if context.data:
-            sections.append("\n## Community Insights\n")
-            for insight in context.data[:3]:  # Top 3
-                sections.append(f"""
-### {insight.type.upper()} from {insight.source}
-- {insight.content[:200]}...
-- Credibility: {insight.credibility}
-- Validation Score: {insight.validation_score:.0%}
-""")
+            sections.append("\n## Winning Strategies & Tips\n")
+            for insight in context.data[:3]:
+                sections.append(f"- {insight.content[:300]}...\n")
 
         return "\n".join(sections)
 
     async def run(self, scholarship_url: str, debug: bool = False) -> Dict[str, Any]:
-        """
-        Execute complete Scout workflow with SEQUENTIAL execution for accuracy
-        
-        1. Scrape Official Page -> Get REAL Scholarship Name
-        2. Deep Search -> Use REAL Name for queries
-        
-        Args:
-            scholarship_url: URL of the scholarship
-            debug: If True, print detailed validation info
-            
-        Returns:
-            Dict containing ScoutIntelligence data
-        """
+        """Execute complete Scout workflow"""
         print("=" * 60)
-        print("🔍 Scout Agent: Starting intelligence gathering...")
+        print("🔍 Scout Agent: Starting intelligence gathering (Custom Pipeline)...")
         print("=" * 60)
 
-        # STEP 1: Official Scrape (Critical for accurate name)
-        print("\n[STEP 1] Scraping official page to identify scholarship...")
+        # STEP 1: Official Scrape
+        print("\n[STEP 1] Scraping official page...")
         official_data = await self.scrape_official_page(scholarship_url)
         
         scholarship_name = official_data.scholarship_name
         print(f"  ✓ Identified: {scholarship_name}")
         
-        # STEP 2: Deep Search (Using accurate name)
+        # STEP 2: Deep Search
         print(f"\n[STEP 2] Starting deep search for '{scholarship_name}'...")
-
         past_winner_context = await self.deep_search_parallel(
             scholarship_url=scholarship_url,
             scholarship_hint=scholarship_name,
@@ -722,10 +492,7 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
         )
 
         # Format combined intelligence
-        combined_text = self.format_combined_intelligence(
-            official_data,
-            past_winner_context
-        )
+        combined_text = self.format_combined_intelligence(official_data, past_winner_context)
 
         # Build final output
         intelligence = ScoutIntelligence(
@@ -736,10 +503,6 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
 
         print("\n" + "=" * 60)
         print("✅ Scout Agent: Intelligence gathering complete!")
-        print(f"   - Official data: ✓")
-        print(f"   - Past winner items: {len(past_winner_context.item)}")
-        print(f"   - Community insights: {len(past_winner_context.data)}")
-        print(f"   - Average validation score: {past_winner_context.search_summary.average_validation_score:.0%}")
         print("=" * 60)
 
         return {

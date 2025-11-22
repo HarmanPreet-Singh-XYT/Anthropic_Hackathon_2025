@@ -5,9 +5,10 @@ Rewrites resume bullets using scholarship vocabulary
 
 from typing import Dict, Any, List
 from pathlib import Path
+import json
 
-from ..utils.llm_client import LLMClient
-from ..utils.prompt_loader import load_prompt
+from utils.llm_client import LLMClient
+from utils.prompt_loader import load_prompt
 
 
 class OptimizerAgent:
@@ -113,8 +114,36 @@ class OptimizerAgent:
                 - optimizations: List of before/after bullets with rationale
                 - summary: Overall optimization strategy
         """
-        # TODO: Implement full Optimizer workflow
-        # 1. Identify target bullets
-        # 2. Optimize each bullet
-        # 3. Generate summary strategy note
-        pass
+        print("\n🔧 Optimizer Agent Running...")
+
+        # Extract values from decoder output
+        primary_values = decoder_output.get("primary_values", [])
+        hidden_weights = decoder_output.get("hidden_weights", {})
+        tone = decoder_output.get("tone", "Professional")
+
+        # Call the optimization method
+        raw_optimizations = await self.optimize_bullets(
+            student_experiences=resume_text,
+            scholarship_values=primary_values,
+            weighted_priorities=hidden_weights,
+            tone=tone
+        )
+
+        # Transform to frontend format: {original, optimized, weight}
+        formatted_optimizations = []
+        for opt in raw_optimizations:
+            # Map priority to weight value
+            priority_weight_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
+            weight = priority_weight_map.get(opt.get("priority", "medium"), 0.6)
+
+            formatted_optimizations.append({
+                "original": opt.get("original", ""),
+                "optimized": opt.get("improved", opt.get("optimized", "")),
+                "weight": weight
+            })
+
+        print(f"  ✓ Optimizer complete: {len(formatted_optimizations)} bullets optimized")
+
+        return {
+            "optimizations": formatted_optimizations
+        }

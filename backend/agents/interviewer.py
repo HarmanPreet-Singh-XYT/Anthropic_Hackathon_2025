@@ -5,10 +5,11 @@ Generates contextual questions to extract bridge stories when gaps detected
 
 from typing import Dict, Any
 from typing import Dict, Any, Optional
+import json
 from pathlib import Path
 
-from ..utils.llm_client import LLMClient
-from ..utils.prompt_loader import load_prompt
+from utils.llm_client import LLMClient
+from utils.prompt_loader import load_prompt
 
 
 class InterviewerAgent:
@@ -133,9 +134,9 @@ class InterviewerAgent:
             "target_gap": target_gap
         }
 
-    def parse_student_response(self, response: str) -> Dict[str, Any]:
+    async def parse_student_response(self, response: str) -> Dict[str, Any]:
         """
-        Process and structure student's answer
+        Process and structure student's answer using LLM extraction
 
         Args:
             response: Student's written answer to question
@@ -146,23 +147,60 @@ class InterviewerAgent:
                 - extracted_story: Structured story elements
                 - keywords_addressed: Which gaps this fills
         """
-        # TODO: Implement response parsing
-        # TODO: Extract key story elements
-        """
-        Execute Interviewer Agent workflow
+        print(f"  → Analyzing student response...")
+        
+        system_prompt = """
+You are an expert narrative analyst. Extract the core story elements from the student's response.
+Return ONLY valid JSON.
+"""
+        
+        user_prompt = f"""
+ANALYZE THIS STUDENT RESPONSE:
+"{response}"
 
-        Args:
-            matchmaker_output: Gap analysis from Matchmaker
+TASK:
+1. Extract the "STAR" components (Situation, Task, Action, Result).
+2. Identify which values/skills are demonstrated.
+3. Assess the emotional tone.
 
-        Returns:
-            Dict containing:
-                - question: str - Question to ask student
-                - target_gap: str - Which keyword this addresses
-                - context: str - Why this question matters
-        """
-        # TODO: Implement full Interviewer workflow
-        # 1. Identify highest-priority gap
-        # 2. Generate contextual question
-        # 3. Return question with metadata
-        # Note: Actual student response handled by workflow state
-        pass
+SCHEMA:
+{{
+  "star_structure": {{
+    "situation": "string",
+    "action": "string",
+    "result": "string"
+  }},
+  "demonstrated_values": ["list", "of", "values"],
+  "tone": "string",
+  "clarity_score": float (0-1)
+}}
+"""
+        try:
+            response_text = await self.llm_client.call(
+                system_prompt=system_prompt,
+                user_message=user_prompt
+            )
+            
+            # Clean and parse JSON
+            cleaned = response_text.strip()
+            if cleaned.startswith("```json"): cleaned = cleaned[7:]
+            if cleaned.endswith("```"): cleaned = cleaned[:-3]
+            
+            analysis = json.loads(cleaned)
+            
+            return {
+                "raw_response": response,
+                "extracted_story": analysis.get("star_structure", {}),
+                "keywords_addressed": analysis.get("demonstrated_values", []),
+                "analysis": analysis
+            }
+            
+        except Exception as e:
+            print(f"  ⚠ Response parsing failed: {e}")
+            # Fallback structure
+            return {
+                "raw_response": response,
+                "extracted_story": {"action": response},
+                "keywords_addressed": [],
+                "analysis": {}
+            }

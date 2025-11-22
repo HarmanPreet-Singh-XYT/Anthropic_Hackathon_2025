@@ -17,7 +17,9 @@ Your task is to analyze this text and uncover the **implicit values** that schol
 
 ## Output Format
 
-Return ONLY a valid JSON object with this exact schema:
+**CRITICAL**: Return ONLY a valid JSON object. Do NOT include markdown code fences, explanations, or ANY text outside the JSON object.
+
+Return the JSON object with this exact schema:
 
 ```json
 {
@@ -39,6 +41,7 @@ Return ONLY a valid JSON object with this exact schema:
 - Focus on what the scholarship **implicitly** values, not just stated requirements
 - Consider past winner profiles as strong signals of selection criteria
 - Be specific and actionable in your analysis
+- **OUTPUT ONLY THE JSON OBJECT - no markdown fences, no explanations, no other text**
 
 ## Input Text
 

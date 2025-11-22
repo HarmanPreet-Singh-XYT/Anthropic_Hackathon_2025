@@ -26,6 +26,7 @@ class ScholarshipState(TypedDict):
     match_score: Optional[float]  # 0.0-1.0 score
     trigger_interview: Optional[bool]  # Decision gate
     identified_gaps: Optional[List[str]]  # Missing keywords
+    matchmaker_results: Optional[Dict[str, Any]]  # Full matchmaker output for frontend
 
     # Phase 3: Human-in-the-Loop
     interview_question: Optional[str]  # Question for student
@@ -119,7 +120,7 @@ class ScholarshipWorkflow:
         # Ghostwriter -> End
         workflow.add_edge("ghostwriter", END)
 
-        return workflow.compile(interrupt_before=["interviewer"])
+        return workflow.compile(interrupt_after=["interviewer"])
 
     async def scout_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Scout Agent - Phase 1"""
@@ -130,7 +131,8 @@ class ScholarshipWorkflow:
             result = await self.agents["scout"].run(state["scholarship_url"])
             return {
                 "scholarship_intelligence": result["scholarship_intelligence"],
-                "resume_text": state.get("resume_text") # Preserve existing
+                "resume_text": state.get("resume_text"), # Preserve existing
+                "current_phase": "ingestion"
             }
         except Exception as e:
             print(f"❌ Scout failed: {e}")
@@ -166,7 +168,10 @@ class ScholarshipWorkflow:
                 combined_text = str(scout_data)
             
             analysis = await self.agents["decoder"].run(combined_text)
-            return {"decoder_analysis": analysis}
+            return {
+                "decoder_analysis": analysis,
+                "current_phase": "analysis"
+            }
         except Exception as e:
             print(f"❌ Decoder failed: {e}")
             return {"errors": state.get("errors", []) + [str(e)]}
@@ -182,7 +187,8 @@ class ScholarshipWorkflow:
             return {
                 "match_score": result["match_score"],
                 "trigger_interview": result["trigger_interview"],
-                "identified_gaps": result["gaps"]
+                "identified_gaps": result["gaps"],
+                "matchmaker_results": result  # Store full results for frontend
             }
         except Exception as e:
             print(f"❌ Matchmaker failed: {e}")
@@ -216,7 +222,8 @@ class ScholarshipWorkflow:
             
             # If no question generated, we might skip interrupt, but for now let's set it
             return {
-                "interview_question": result["question"]
+                "interview_question": result["question"],
+                "current_phase": "interview"
             }
         except Exception as e:
             print(f"❌ Interviewer failed: {e}")

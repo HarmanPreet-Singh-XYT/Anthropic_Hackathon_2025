@@ -3,11 +3,12 @@ Agent G: The Ghostwriter
 Drafts scholarship essay using bridge story, weights, and resume context
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
+import json
 
-from ..utils.llm_client import LLMClient
-from ..utils.prompt_loader import load_prompt
+from utils.llm_client import LLMClient
+from utils.prompt_loader import load_prompt
 
 
 class GhostwriterAgent:

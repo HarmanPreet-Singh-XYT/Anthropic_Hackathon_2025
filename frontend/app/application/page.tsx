@@ -1,0 +1,297 @@
+"use client"
+
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sparkles, FileDown, Loader2, CheckCircle } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+
+// --- Types ---
+interface ApplicationData {
+    essay?: string;
+    resume_optimizations?: Array<{
+        original: string;
+        optimized: string;
+        weight: number;
+    }>;
+    strategy_note?: string;
+}
+
+export default function ApplicationPage() {
+    const [applicationData, setApplicationData] = useState<ApplicationData | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [exportSuccess, setExportSuccess] = useState(false);
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const session_id = searchParams.get('session');
+    const contentRef = useRef<HTMLDivElement>(null);
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+    // Load application data on mount
+    useEffect(() => {
+        if (!session_id) return;
+
+        const fetchData = async () => {
+            try {
+                const response = await fetch(`${API_URL}/api/workflow/status/${session_id}`);
+                if (!response.ok) throw new Error("Failed to fetch data");
+
+                const data = await response.json();
+
+                if (data.status === "complete" && data.result) {
+                    setApplicationData({
+                        essay: data.result.essay_draft,
+                        resume_optimizations: data.result.resume_optimizations || [],
+                        strategy_note: data.result.strategy_note
+                    });
+                } else if (data.status === "waiting_for_input") {
+                    // Interview required - redirect to AI-Help page
+                    router.push(`/ai-help?session=${session_id}`);
+                } else if (data.status === "processing" || data.status === "processing_resume") {
+                    // Still processing, poll again
+                    setTimeout(fetchData, 2000);
+                }
+            } catch (e) {
+                console.error("Error fetching application data:", e);
+            }
+        };
+
+        fetchData();
+    }, [session_id, router]);
+
+    // Export to PDF function
+    const handleExportPDF = async () => {
+        if (!contentRef.current) return;
+
+        setIsExporting(true);
+        try {
+            // Create canvas from the content
+            const canvas = await html2canvas(contentRef.current, {
+                scale: 2,
+                backgroundColor: '#050505',
+                logging: false,
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const imgWidth = 210; // A4 width in mm
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+            pdf.save('scholarship-application.pdf');
+
+            setExportSuccess(true);
+            setTimeout(() => setExportSuccess(false), 3000);
+        } catch (error) {
+            console.error('Error exporting PDF:', error);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    if (!applicationData) {
+        return (
+            <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-zinc-500">Generating your application...</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 relative">
+
+            {/* Background Stars/Particles */}
+            <div className="fixed inset-0 z-0 pointer-events-none">
+                {[...Array(30)].map((_, i) => (
+                    <motion.div
+                        key={i}
+                        className="absolute rounded-full bg-white"
+                        initial={{
+                            opacity: 0,
+                            top: `${Math.random() * 100}%`,
+                            left: `${Math.random() * 100}%`,
+                        }}
+                        animate={{
+                            opacity: [0.1, 0.4, 0.1],
+                            scale: [1, 1.5, 1],
+                        }}
+                        transition={{
+                            duration: Math.random() * 3 + 2,
+                            repeat: Infinity,
+                            delay: Math.random() * 2,
+                        }}
+                        style={{
+                            width: `${Math.random() * 3 + 1}px`,
+                            height: `${Math.random() * 3 + 1}px`,
+                        }}
+                    />
+                ))}
+
+                {/* Subtle Glows */}
+                <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-purple-500/5 rounded-full blur-[150px]" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[150px]" />
+            </div>
+
+            {/* Main Content */}
+            <div className="relative z-10 max-w-6xl mx-auto px-6 py-12">
+
+                {/* Header */}
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    className="text-center mb-12"
+                >
+                    <div className="inline-flex items-center justify-center mb-4">
+                        <Sparkles className="w-12 h-12 text-white fill-white" />
+                    </div>
+                    <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-3">
+                        Your Application
+                    </h1>
+                    <p className="text-zinc-400 text-lg font-light tracking-wide">
+                        Ready to impress
+                    </p>
+                </motion.div>
+
+                {/* Content Sections */}
+                <div ref={contentRef} className="space-y-6 mb-8">
+
+                    {/* Essay Section */}
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.6, delay: 0.2 }}
+                        className="bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-[24px] p-8 shadow-2xl shadow-black/50 relative overflow-hidden"
+                    >
+                        {/* Inner Glow */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
+
+                        {/* Section Header */}
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-2 h-2 rounded-full bg-white" />
+                            <h2 className="text-xs font-bold tracking-widest text-white uppercase">Essay</h2>
+                        </div>
+
+                        {/* Essay Content */}
+                        <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl p-6 min-h-[300px]">
+                            {applicationData.essay ? (
+                                <div className="prose prose-invert max-w-none">
+                                    <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap font-light text-base">
+                                        {applicationData.essay}
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="text-zinc-500 italic">Your essay will appear here...</p>
+                            )}
+                        </div>
+
+                        {/* Strategy Note */}
+                        {applicationData.strategy_note && (
+                            <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                                <p className="text-xs text-blue-300/80 font-medium mb-1">Strategy Note</p>
+                                <p className="text-sm text-blue-200/60">{applicationData.strategy_note}</p>
+                            </div>
+                        )}
+                    </motion.div>
+
+                    {/* Resume Section */}
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.6, delay: 0.4 }}
+                        className="bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-[24px] p-8 shadow-2xl shadow-black/50 relative overflow-hidden"
+                    >
+                        {/* Inner Glow */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
+
+                        {/* Section Header */}
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-2 h-2 rounded-full bg-white" />
+                            <h2 className="text-xs font-bold tracking-widest text-white uppercase">Resume</h2>
+                        </div>
+
+                        {/* Resume Content */}
+                        <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl p-6 min-h-[300px]">
+                            {applicationData.resume_optimizations && applicationData.resume_optimizations.length > 0 ? (
+                                <div className="space-y-6">
+                                    {applicationData.resume_optimizations.map((opt, index) => (
+                                        <div key={index} className="space-y-3">
+                                            {/* Original */}
+                                            <div>
+                                                <p className="text-xs text-zinc-500 mb-2">Original</p>
+                                                <p className="text-sm text-zinc-400 line-through opacity-60">{opt.original}</p>
+                                            </div>
+
+                                            {/* Optimized */}
+                                            <div>
+                                                <p className="text-xs text-green-400 mb-2 flex items-center gap-2">
+                                                    Optimized
+                                                    <span className="text-[10px] px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-full">
+                                                        Weight: {Math.round(opt.weight * 100)}%
+                                                    </span>
+                                                </p>
+                                                <p className="text-sm text-zinc-200">{opt.optimized}</p>
+                                            </div>
+
+                                            {index < applicationData.resume_optimizations!.length - 1 && (
+                                                <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-zinc-500 italic">Your resume will appear here...</p>
+                            )}
+                        </div>
+                    </motion.div>
+                </div>
+
+                {/* Export Button */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.6 }}
+                    className="flex justify-center"
+                >
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={isExporting}
+                        className="group relative h-14 px-8 rounded-xl font-medium text-base flex items-center justify-center gap-3 bg-white text-black hover:bg-zinc-100 disabled:bg-zinc-700 disabled:text-zinc-400 hover:scale-[1.02] active:scale-[0.98] shadow-2xl shadow-white/20 transition-all duration-300 overflow-hidden"
+                    >
+                        {/* Animated background gradient */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+                        <span className="relative z-10 flex items-center gap-3">
+                            {isExporting ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Exporting...
+                                </>
+                            ) : exportSuccess ? (
+                                <>
+                                    <CheckCircle className="w-5 h-5" />
+                                    Exported!
+                                </>
+                            ) : (
+                                <>
+                                    <FileDown className="w-5 h-5" />
+                                    Export PDF
+                                </>
+                            )}
+                        </span>
+                    </button>
+                </motion.div>
+            </div>
+        </div>
+    );
+}

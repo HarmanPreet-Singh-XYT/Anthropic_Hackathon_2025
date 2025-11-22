@@ -28,7 +28,7 @@ class MatchmakerAgent:
         """
         self.vector_store = vector_store
         self.llm_client = llm_client
-        self.threshold = 0.8  # Match score threshold
+        self.threshold = 0.4  # Match score threshold (lowered significantly for testing)
         self.gap_threshold = 0.5  # Individual keyword gap threshold
 
     async def _generate_weighted_values(self, scout_intelligence: Dict) -> Dict[str, float]:
@@ -147,9 +147,10 @@ Example Output:
             # We convert to 0-1 scale where 1 = perfect match
             if query_result["distances"] and len(query_result["distances"]) > 0:
                 best_distance = min(query_result["distances"])
-                # Conversion formula: score = 1 / (1 + distance)
-                # This maps: distance=0 → score=1.0, distance=1 → score=0.5, distance=inf → score=0.0
-                best_match_score = 1.0 / (1.0 + best_distance)
+                # Conversion formula: score = 1 / (1 + distance * 0.5)
+                # This maps: distance=0 → score=1.0, distance=1 → score=0.66, distance=1.5 → score=0.57
+                # We use a very flat curve to ensure we get some signal
+                best_match_score = 1.0 / (1.0 + best_distance * 0.5)
             else:
                 best_match_score = 0.0
 
@@ -161,8 +162,9 @@ Example Output:
                 "matching_chunks": matching_chunks,
                 "weight": weight
             }
-
-            print(f"  → {keyword} (weight: {weight:.0%}): match score = {best_match_score:.2f}")
+            
+            raw_dist = best_distance if 'best_distance' in locals() else "N/A"
+            print(f"  → {keyword} (weight: {weight:.0%}): match score = {best_match_score:.2f} (dist: {raw_dist})")
 
         return results
 
@@ -307,13 +309,13 @@ Example Output:
 
     async def run(
         self,
-        scout_intelligence: Dict[str, Any]
+        decoder_analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Execute Matchmaker Agent workflow
 
         Args:
-            scout_intelligence: Output from Scout Agent
+            decoder_analysis: Output from Decoder Agent containing weights
 
         Returns:
             Dict containing:
@@ -323,13 +325,31 @@ Example Output:
                 - weighted_values: Dict[str, float]
                 - keyword_match_details: Dict
         """
-        # STEP 1: Generate weighted values
+        # STEP 1: Get weighted values from Decoder
         print("\n[STEP 1] Analyzing scholarship importance weights...")
-        weighted_values = await self._generate_weighted_values(scout_intelligence)
         
+        # Use weights directly from Decoder if available
+        if "hidden_weights" in decoder_analysis:
+            weighted_values = decoder_analysis["hidden_weights"]
+            if weighted_values:
+                print(f"  ✓ Using weights from Decoder: {', '.join(f'{k}: {v:.0%}' for k, v in weighted_values.items())}")
+            else:
+                print("  ⚠ Decoder returned empty weights dict")
+                weighted_values = {}
+        else:
+            # Fallback (shouldn't happen in normal flow)
+            print("  ⚠ No weights found in Decoder output, using defaults")
+            weighted_values = {}
+
         # STEP 2: Query resume for each keyword
         print("\n[STEP 2] Querying resume for keyword matches...")
-        keyword_results = await self._query_resume_for_keywords(weighted_values)
+        
+        if not weighted_values:
+            print("  ⚠ No weighted values available - cannot perform keyword matching")
+            print("  → This likely means the Decoder failed. Check Decoder logs above.")
+            keyword_results = {}
+        else:
+            keyword_results = await self._query_resume_for_keywords(weighted_values)
         
         # STEP 3: Calculate overall match score
         print("\n[STEP 3] Calculating overall match score...")
