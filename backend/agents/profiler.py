@@ -25,7 +25,67 @@ class ProfilerAgent:
         """
         self.vector_store = vector_store
         # PDF parser is a stateless utility module, no init needed
+    # In agents/profiler.py
 
+    async def retrieve_from_session(self, session_id: str) -> Dict[str, Any]:
+        """
+        Retrieve resume data from ChromaDB for an existing session
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Dict containing:
+                - success: bool
+                - resume_text: str (full concatenated text)
+                - chunks_count: int
+                - error: str (if failed)
+        """
+        try:
+            print(f"📂 [Profiler] Retrieving resume from session: {session_id}")
+            
+            # Query all chunks for this session
+            results = self.vector_store.collection.get(
+                where={"session_id": session_id},
+                include=["documents", "metadatas"]
+            )
+            
+            if not results or not results.get("documents"):
+                return {
+                    "success": False,
+                    "error": f"No resume data found for session {session_id}"
+                }
+            
+            # Reconstruct full resume text
+            chunks = results["documents"]
+            metadatas = results.get("metadatas", [])
+            
+            print(f"  → Found {len(chunks)} chunks in ChromaDB")
+            
+            # Sort chunks by chunk_index if available
+            chunk_data = list(zip(chunks, metadatas))
+            chunk_data.sort(key=lambda x: x[1].get("chunk_index", 0))
+            
+            # Concatenate chunks
+            resume_text = "\n\n".join([chunk for chunk, _ in chunk_data])
+            
+            print(f"  ✓ Retrieved {len(chunks)} chunks ({len(resume_text)} total chars)")
+            print(f"  → Resume preview: {resume_text[:200]}...")
+            
+            return {
+                "success": True,
+                "resume_text": resume_text,
+                "chunks_count": len(chunks)
+            }
+            
+        except Exception as e:
+            print(f"  ❌ Error retrieving from session: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "error": str(e)
+            }
     async def parse_resume_pdf(self, pdf_path: str) -> str:
         """
         Extract text from resume PDF
