@@ -21,19 +21,35 @@ class SupplementaryGenerator:
     def _clean_json_response(self, response: str) -> str:
         """
         Clean LLM response to extract pure JSON
+        Handles both objects {} and arrays []
         """
         if not response:
             return "{}"
         
         # Remove markdown code blocks
-        response = re.sub(r'^```json\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'^```json\s*', '', response, flags=re.MULTILINE | re.IGNORECASE)
         response = re.sub(r'^```\s*', '', response, flags=re.MULTILINE)
         response = re.sub(r'\s*```$', '', response, flags=re.MULTILINE)
         
+        # Remove any leading/trailing text explanations
+        response = response.strip()
+        
         # Try to find JSON object or array
-        json_match = re.search(r'[\{$$].*[\}$$]', response, re.DOTALL)
-        if json_match:
-            return json_match.group(0)
+        # Look for arrays first
+        array_match = re.search(r'$$.*$$', response, re.DOTALL)
+        if array_match:
+            potential_json = array_match.group(0)
+            # Verify it's valid by checking bracket balance
+            if potential_json.count('[') == potential_json.count(']'):
+                return potential_json
+        
+        # Then try objects
+        object_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if object_match:
+            potential_json = object_match.group(0)
+            # Verify it's valid by checking brace balance
+            if potential_json.count('{') == potential_json.count('}'):
+                return potential_json
         
         return response.strip()
     
@@ -48,17 +64,6 @@ class SupplementaryGenerator:
         
         print("    📋 Generating optimized resume bullets...")
         
-        try:
-            prompt = load_prompt("optimizer", {
-                "scholarship_values": json.dumps(scholarship_profile.get('priorities', []), indent=2),
-                "weighted_priorities": json.dumps(scholarship_profile.get('weighted_priorities', {}), indent=2),
-                "student_experiences": json.dumps(content_selection, indent=2),
-                "tone": scholarship_profile.get('tone_profile', 'professional')
-            })
-        except Exception as e:
-            print(f"    [WARNING] Failed to load prompt template: {e}")
-            prompt = "You are an expert resume writer. Optimize resume bullets for scholarship applications."
-        
         # Simplify content for prompt
         primary_story = content_selection.get('primary_story', {})
         story_text = ""
@@ -66,28 +71,47 @@ class SupplementaryGenerator:
             story_data = primary_story.get('story', {})
             story_text = story_data.get('text', str(story_data))[:500]
         
-        user_message = f"""Suggest 5-7 resume bullet point optimizations.
+        priorities = scholarship_profile.get('priorities', [])[:5]
+        priorities_str = ', '.join(priorities) if priorities else 'scholarship values'
+        
+        system_prompt = """You are an expert resume writer specializing in scholarship applications. Generate optimized resume bullet points that emphasize quantifiable achievements and align with scholarship values. Return ONLY a valid JSON array with no additional text, explanation, or markdown formatting."""
+        
+        user_message = f"""Generate 5-7 optimized resume bullet points for this scholarship application.
 
-SCHOLARSHIP VALUES: {', '.join(scholarship_profile.get('priorities', [])[:5])}
+    SCHOLARSHIP VALUES: {priorities_str}
 
-STUDENT EXPERIENCES:
-{story_text}...
+    STUDENT EXPERIENCES:
+    {story_text}...
 
-For each bullet provide as JSON array (no markdown):
-[
-    {{
-        "section": "Experience",
-        "original": "Original bullet text if modifying existing",
-        "improved": "Optimized bullet text with scholarship vocabulary",
-        "rationale": "Why this change matters",
-        "impact_metrics": "Quantifiable outcomes",
-        "priority": "high"
-    }}
-]"""
+    Requirements:
+    - Start each bullet with a strong action verb
+    - Include quantifiable metrics (numbers, percentages, scale)
+    - Emphasize impact and outcomes
+    - Align language with scholarship values
+    - Keep bullets to 1-2 lines each
+
+    Return ONLY a JSON array (no markdown, no text before or after):
+    [
+        {{
+            "section": "Experience",
+            "original": "Led coding club",
+            "improved": "Founded TechBridge coding initiative serving 50+ underrepresented students, securing $5,000 in funding and partnerships with 3 tech companies",
+            "rationale": "Emphasizes scale, resourcefulness, and equity",
+            "impact_metrics": "50+ students, $5,000 secured, 3 partnerships",
+            "priority": "high"
+        }},
+        {{
+            "section": "Leadership",
+            "improved": "Developed comprehensive web development curriculum resulting in 15 completed student projects and 3 hackathon awards within 8 months",
+            "rationale": "Highlights curriculum design and measurable outcomes",
+            "impact_metrics": "15 projects, 3 awards, 8-month timeframe",
+            "priority": "high"
+        }}
+    ]"""
         
         try:
             bullets_json = await self.llm.call(
-                system_prompt=prompt,
+                system_prompt=system_prompt,
                 user_message=user_message
             )
             
@@ -95,7 +119,27 @@ For each bullet provide as JSON array (no markdown):
                 print("    [WARNING] Empty resume bullets response")
                 return self._get_default_bullets()
             
+            # Debug logging
+            print(f"    [DEBUG] Resume bullets response length: {len(bullets_json)}")
+            print(f"    [DEBUG] First 100 chars: {bullets_json[:100]}")
+            print(f"    [DEBUG] Last 100 chars: {bullets_json[-100:]}")
+            
+            # Clean the response more aggressively
             cleaned_json = self._clean_json_response(bullets_json)
+            
+            # Additional cleaning for arrays
+            cleaned_json = cleaned_json.strip()
+            
+            # If it starts with [ and ends with ], extract just that
+            if '[' in cleaned_json and ']' in cleaned_json:
+                start_idx = cleaned_json.find('[')
+                end_idx = cleaned_json.rfind(']')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    cleaned_json = cleaned_json[start_idx:end_idx + 1]
+            
+            print(f"    [DEBUG] Cleaned JSON length: {len(cleaned_json)}")
+            print(f"    [DEBUG] Cleaned first 100 chars: {cleaned_json[:100]}")
+            
             bullets = json.loads(cleaned_json)
             
             if not isinstance(bullets, list):
@@ -107,10 +151,35 @@ For each bullet provide as JSON array (no markdown):
             
         except json.JSONDecodeError as e:
             print(f"    [ERROR] Failed to parse resume bullets: {e}")
+            print(f"    [ERROR] Attempted to parse: {cleaned_json[:500] if 'cleaned_json' in locals() else bullets_json[:500]}")
+            
+            # Try more aggressive cleaning
+            try:
+                # Remove everything before first [ and after last ]
+                if '[' in bullets_json and ']' in bullets_json:
+                    start = bullets_json.find('[')
+                    end = bullets_json.rfind(']')
+                    extracted = bullets_json[start:end + 1]
+                    
+                    # Remove any escaped newlines or extra whitespace
+                    extracted = extracted.replace('\\n', ' ').replace('\n', ' ')
+                    extracted = re.sub(r'\s+', ' ', extracted)
+                    
+                    print(f"    [RETRY] Attempting to parse extracted array...")
+                    bullets = json.loads(extracted)
+                    
+                    if isinstance(bullets, list):
+                        print(f"    ✅ Successfully parsed {len(bullets)} bullets on retry")
+                        return bullets
+            except Exception as retry_error:
+                print(f"    [RETRY FAILED] {retry_error}")
+            
             return self._get_default_bullets()
         
         except Exception as e:
             print(f"    [ERROR] Unexpected error generating bullets: {e}")
+            import traceback
+            print(f"    [TRACEBACK] {traceback.format_exc()}")
             return self._get_default_bullets()
     
     def _get_default_bullets(self) -> List[Dict[str, Any]]:
