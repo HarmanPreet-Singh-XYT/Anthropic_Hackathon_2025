@@ -33,7 +33,8 @@ class ScholarshipState(TypedDict):
     bridge_story: Optional[str]  # Student's response
 
     # Phase 4: Adaptive Generation
-    resume_optimizations: Optional[List[Dict[str, str]]]  # Bullet rewrites
+    resume_optimizations: Optional[Dict[str, Any]]  # Complete optimizer output
+    resume_markdown: Optional[str]  # Formatted resume markdown
     essay_draft: Optional[str]  # Generated essay
     strategy_note: Optional[str]  # Explanation
 
@@ -84,24 +85,12 @@ class ScholarshipWorkflow:
         workflow.add_node("ghostwriter", self.ghostwriter_node)
 
         # Define edges
-        # Phase 1: Parallel Ingestion (simulated as sequential for now or parallel branches)
-        # LangGraph allows parallel execution if nodes branch from start
-        # For simplicity, let's do: Start -> Scout -> Profiler -> Decoder ...
-        # Or better: Start -> [Scout, Profiler] -> Decoder
-        
-        # We'll start with Scout
         workflow.set_entry_point("scout")
-        
-        # Scout -> Profiler
         workflow.add_edge("scout", "profiler")
-        
-        # Profiler -> Decoder
         workflow.add_edge("profiler", "decoder")
-        
-        # Decoder -> Matchmaker
         workflow.add_edge("decoder", "matchmaker")
         
-        # Matchmaker -> Conditional (Interviewer OR Optimizer)
+        # Conditional routing after matchmaker
         workflow.add_conditional_edges(
             "matchmaker",
             self.should_interview,
@@ -111,52 +100,112 @@ class ScholarshipWorkflow:
             }
         )
         
-        # Interviewer -> Optimizer (after human input)
         workflow.add_edge("interviewer", "optimizer")
-        
-        # Optimizer -> Ghostwriter
         workflow.add_edge("optimizer", "ghostwriter")
-        
-        # Ghostwriter -> End
         workflow.add_edge("ghostwriter", END)
 
         return workflow.compile(interrupt_after=["matchmaker"])
 
+    def _validate_state(self, state: Dict[str, Any], phase: str) -> bool:
+        """
+        Validate state has required fields for given phase
+        
+        Args:
+            state: Current state dict
+            phase: Phase name for validation
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        validation_rules = {
+            "decoder": ["scholarship_intelligence", "resume_text"],
+            "matchmaker": ["decoder_analysis", "resume_text"],
+            "optimizer": ["resume_text", "decoder_analysis"],
+            "ghostwriter": ["resume_text", "decoder_analysis"]
+        }
+        
+        required = validation_rules.get(phase, [])
+        missing = [k for k in required if not state.get(k)]
+        
+        if missing:
+            print(f"  ⚠ State validation failed for {phase}: missing {missing}")
+            for key in missing:
+                print(f"    - {key}: {type(state.get(key))}")
+            return False
+        
+        return True
+
     async def scout_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Scout Agent - Phase 1"""
         print("\n🔵 NODE: Scout Agent")
-        state["current_phase"] = "ingestion"
+        print(f"  → Scraping scholarship URL: {state['scholarship_url']}")
         
         try:
             result = await self.agents["scout"].run(state["scholarship_url"])
+            
+            print(f"  ✓ Scout completed successfully")
+            print(f"  → Intelligence keys: {list(result.get('scholarship_intelligence', {}).keys())}")
+            
             return {
                 "scholarship_intelligence": result["scholarship_intelligence"],
-                "resume_text": state.get("resume_text"), # Preserve existing
                 "current_phase": "ingestion"
             }
         except Exception as e:
-            print(f"❌ Scout failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Scout failed: {e}")
+            return {
+                "errors": state.get("errors", []) + [f"Scout error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def profiler_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Profiler Agent - Phase 1"""
         print("\n🔵 NODE: Profiler Agent")
+        print(f"  → Processing resume: {state['resume_pdf_path']}")
         
         try:
+            # Check file exists
+            from pathlib import Path
+            if not Path(state["resume_pdf_path"]).exists():
+                raise FileNotFoundError(f"Resume file not found: {state['resume_pdf_path']}")
+            
             # Run profiler
             result = await self.agents["profiler"].run(state["resume_pdf_path"])
+            
+            # Validate result
+            if not result.get("success"):
+                raise ValueError(f"Profiler failed: {result.get('error', 'Unknown error')}")
+            
+            resume_text = result.get("resume_text", "")
+            
+            print(f"  ✓ Profiler completed successfully")
+            print(f"  → Extracted {len(resume_text)} characters")
+            print(f"  → Stored {result.get('chunks_stored', 0)} chunks in ChromaDB")
+            print(f"  → Resume preview: {resume_text[:100]}...")
+            
             return {
                 "resume_processed": True,
-                "resume_text": result.get("text", "")
+                "resume_text": resume_text,
+                "current_phase": "ingestion"
             }
         except Exception as e:
-            print(f"❌ Profiler failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Profiler failed: {e}")
+            return {
+                "resume_processed": False,
+                "resume_text": "",
+                "errors": state.get("errors", []) + [f"Profiler error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def decoder_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Decoder Agent - Phase 2"""
         print("\n🔵 NODE: Decoder Agent")
-        state["current_phase"] = "analysis"
+        
+        # Validate state
+        if not self._validate_state(state, "decoder"):
+            return {
+                "errors": state.get("errors", []) + ["Invalid state for decoder"],
+                "current_phase": "error"
+            }
         
         try:
             # Get combined text from scout output
@@ -165,37 +214,65 @@ class ScholarshipWorkflow:
             
             if not combined_text:
                 # Fallback if combined_text missing
+                print("  ⚠ No combined_text found, using raw intelligence")
                 combined_text = str(scout_data)
             
+            print(f"  → Analyzing {len(combined_text)} characters of scholarship data")
+            
             analysis = await self.agents["decoder"].run(combined_text)
+            
+            print(f"  ✓ Decoder completed successfully")
+            print(f"  → Primary values: {analysis.get('primary_values', [])}")
+            print(f"  → Hidden weights: {list(analysis.get('hidden_weights', {}).keys())}")
+            print(f"  → Tone: {analysis.get('tone', 'N/A')}")
+            
             return {
                 "decoder_analysis": analysis,
                 "current_phase": "analysis"
             }
         except Exception as e:
-            print(f"❌ Decoder failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Decoder failed: {e}")
+            return {
+                "errors": state.get("errors", []) + [f"Decoder error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def matchmaker_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Matchmaker Agent - Phase 2"""
         print("\n🔵 NODE: Matchmaker Agent")
         
+        # Validate state
+        if not self._validate_state(state, "matchmaker"):
+            return {
+                "errors": state.get("errors", []) + ["Invalid state for matchmaker"],
+                "current_phase": "error"
+            }
+        
         try:
             analysis = state.get("decoder_analysis", {})
             result = await self.agents["matchmaker"].run(analysis)
+            
+            print(f"  ✓ Matchmaker completed successfully")
+            print(f"  → Match score: {result['match_score']:.0%}")
+            print(f"  → Trigger interview: {result['trigger_interview']}")
+            print(f"  → Gaps identified: {result['gaps']}")
             
             return {
                 "match_score": result["match_score"],
                 "trigger_interview": result["trigger_interview"],
                 "identified_gaps": result["gaps"],
-                "matchmaker_results": result  # Store full results for frontend
+                "matchmaker_results": result,
+                "current_phase": "matching"
             }
         except Exception as e:
-            print(f"❌ Matchmaker failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Matchmaker failed: {e}")
+            return {
+                "errors": state.get("errors", []) + [f"Matchmaker error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     def should_interview(self, state: ScholarshipState) -> str:
-        """Conditional routing"""
+        """Conditional routing after matchmaker"""
         if state.get("trigger_interview", False):
             print("  🔀 Routing to: Interviewer (Gap detected)")
             return "interviewer"
@@ -206,52 +283,110 @@ class ScholarshipWorkflow:
     async def interviewer_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Interviewer Agent - Phase 3"""
         print("\n🔵 NODE: Interviewer Agent")
-        state["current_phase"] = "interview"
         
         # If we already have a bridge story (resuming), skip generation
         if state.get("bridge_story"):
             print("  ✓ Bridge story present, proceeding...")
-            return {}
+            return {"current_phase": "interview_complete"}
 
         try:
             resume_text = state.get("resume_text", "")
             gaps = state.get("identified_gaps", [])
             weights = state.get("decoder_analysis", {}).get("hidden_weights", {})
             
+            print(f"  → Generating question for gaps: {gaps}")
+            
             result = await self.agents["interviewer"].run(resume_text, gaps, weights)
             
-            # If no question generated, we might skip interrupt, but for now let's set it
+            print(f"  ✓ Interviewer generated question")
+            print(f"  → Target gap: {result.get('target_gap')}")
+            print(f"  → Question: {result.get('question', '')[:100]}...")
+            
             return {
                 "interview_question": result["question"],
                 "current_phase": "interview"
             }
         except Exception as e:
-            print(f"❌ Interviewer failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Interviewer failed: {e}")
+            return {
+                "errors": state.get("errors", []) + [f"Interviewer error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def optimizer_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Optimizer Agent - Phase 4"""
         print("\n🔵 NODE: Optimizer Agent")
-        state["current_phase"] = "generation"
+        print(f"  [DEBUG] State keys: {list(state.keys())}")
+        
+        # Validate state
+        if not self._validate_state(state, "optimizer"):
+            return {
+                "errors": state.get("errors", []) + ["Invalid state for optimizer"],
+                "current_phase": "error"
+            }
         
         try:
             resume_text = state.get("resume_text", "")
             decoder_output = state.get("decoder_analysis", {})
             
+            # Additional validation
+            if not resume_text or len(resume_text) < 100:
+                print(f"  ⚠ WARNING: Resume text is empty or too short ({len(resume_text)} chars)")
+                return {
+                    "errors": state.get("errors", []) + ["Resume text not available for optimization"],
+                    "current_phase": "error"
+                }
+            
+            print(f"  → Optimizing resume ({len(resume_text)} chars)")
+            print(f"  → Using decoder values: {decoder_output.get('primary_values', [])}")
+            print(f"  → Bridge story present: {bool(state.get('bridge_story'))}")
+            
             result = await self.agents["optimizer"].run(resume_text, decoder_output)
-            return {"resume_optimizations": result["optimizations"]}
+            
+            # Extract components
+            optimizations = result.get("optimizations", [])
+            markdown = result.get("full_resume_markdown", "")
+            
+            print(f"  ✓ Optimizer completed successfully")
+            print(f"  → Generated {len(optimizations)} optimizations")
+            print(f"  → Generated markdown: {len(markdown)} chars")
+            
+            if not markdown:
+                print(f"  ⚠ WARNING: No markdown generated!")
+            else:
+                print(f"  → Markdown preview: {markdown[:100]}...")
+            
+            return {
+                "resume_optimizations": result,
+                "resume_markdown": markdown,
+                "current_phase": "generation"
+            }
         except Exception as e:
-            print(f"❌ Optimizer failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Optimizer failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "errors": state.get("errors", []) + [f"Optimizer error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def ghostwriter_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Ghostwriter Agent - Phase 4"""
         print("\n🔵 NODE: Ghostwriter Agent")
         
+        # Validate state
+        if not self._validate_state(state, "ghostwriter"):
+            return {
+                "errors": state.get("errors", []) + ["Invalid state for ghostwriter"],
+                "current_phase": "error"
+            }
+        
         try:
             decoder_output = state.get("decoder_analysis", {})
             resume_text = state.get("resume_text", "")
             bridge_story = state.get("bridge_story")
+            
+            print(f"  → Writing essay with bridge story: {bool(bridge_story)}")
             
             result = await self.agents["ghostwriter"].run(
                 decoder_output=decoder_output,
@@ -259,14 +394,24 @@ class ScholarshipWorkflow:
                 bridge_story=bridge_story
             )
             
+            essay = result.get("essay", "")
+            strategy = result.get("strategy_note", "")
+            
+            print(f"  ✓ Ghostwriter completed successfully")
+            print(f"  → Essay length: {len(essay)} chars")
+            print(f"  → Word count: {result.get('word_count', 0)} words")
+            
             return {
-                "essay_draft": result["essay"],
-                "strategy_note": result["strategy_note"],
+                "essay_draft": essay,
+                "strategy_note": strategy,
                 "current_phase": "complete"
             }
         except Exception as e:
-            print(f"❌ Ghostwriter failed: {e}")
-            return {"errors": state.get("errors", []) + [str(e)]}
+            print(f"  ❌ Ghostwriter failed: {e}")
+            return {
+                "errors": state.get("errors", []) + [f"Ghostwriter error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def run(
         self,
@@ -274,7 +419,11 @@ class ScholarshipWorkflow:
         resume_pdf_path: str
     ) -> Dict[str, Any]:
         """Execute the full workflow"""
-        print(f"🚀 Starting Scholarship Workflow for {scholarship_url}")
+        print("=" * 80)
+        print(f"🚀 Starting Scholarship Workflow")
+        print(f"  → Scholarship: {scholarship_url}")
+        print(f"  → Resume: {resume_pdf_path}")
+        print("=" * 80)
         
         initial_state = ScholarshipState(
             scholarship_url=scholarship_url,
@@ -283,17 +432,27 @@ class ScholarshipWorkflow:
             errors=[]
         )
         
-        # Run until interrupt or end
-        # For LangGraph, we usually use .stream() or .invoke()
-        # Since we have an interrupt, we need to handle it.
-        # But here we just return the final state or the interrupted state.
-        
-        # Note: compiled graph is in self.graph
-        # We need to await the invocation
-        
-        # Using ainvoke for async execution
-        final_state = await self.graph.ainvoke(initial_state)
-        return final_state
+        try:
+            # Run until interrupt or end
+            final_state = await self.graph.ainvoke(initial_state)
+            
+            print("\n" + "=" * 80)
+            print(f"✅ Workflow execution complete")
+            print(f"  → Final phase: {final_state.get('current_phase')}")
+            print(f"  → Errors: {len(final_state.get('errors', []))}")
+            print("=" * 80)
+            
+            return final_state
+            
+        except Exception as e:
+            print(f"\n❌ Workflow execution failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                **initial_state,
+                "errors": [f"Workflow error: {str(e)}"],
+                "current_phase": "error"
+            }
 
     async def resume_after_interview(
         self,
@@ -301,46 +460,65 @@ class ScholarshipWorkflow:
         checkpoint_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Resume workflow after receiving student's bridge story"""
-        print("🔄 Resuming workflow with bridge story...")
+        print("=" * 80)
+        print("🔄 Resuming workflow with bridge story")
+        print("=" * 80)
+        
+        # Validate checkpoint state
+        required_keys = ["resume_text", "decoder_analysis"]
+        missing_keys = [k for k in required_keys if not checkpoint_state.get(k)]
+        
+        if missing_keys:
+            print(f"  ⚠ WARNING: Missing required state keys: {missing_keys}")
+            return {
+                **checkpoint_state,
+                "errors": checkpoint_state.get("errors", []) + [f"Missing state: {missing_keys}"],
+                "current_phase": "error"
+            }
         
         # Update state with user input
         checkpoint_state["bridge_story"] = bridge_story
         
-        # Resume execution
-        # We need to continue from where we left off (Interviewer node)
-        # Since we updated the state, the next step after Interviewer is Optimizer
-        # But we need to make sure the graph knows we are resuming.
-        # In standard LangGraph, we'd use the checkpoint ID.
-        # Here, we are simulating it by re-invoking with the updated state,
-        # assuming the graph logic handles "already done" nodes or we just start from the next node.
-        # However, re-running from start is inefficient.
-        # A better way for this simple implementation:
-        # Just run the remaining nodes manually or create a sub-graph.
-        # OR, since we are using ainvoke, we can't easily "resume" without a persistent checkpointer.
-        #
-        # Workaround: We will just re-run the graph but with the bridge_story already in state.
-        # The Interviewer node checks `if state.get("bridge_story")` and returns immediately if present.
-        # This effectively skips the generation and the interrupt (since we won't hit interrupt if we don't stop? 
-        # Wait, interrupt_before=["interviewer"] means it stops BEFORE interviewer.
-        # If we want to resume, we need to bypass that interrupt or change the config.
-        #
-        # Actually, if we re-run, we start from Scout again. That's bad.
-        #
-        # Correct LangGraph pattern: Use a Checkpointer.
-        # But we haven't set up a DB for checkpoints.
-        #
-        # Alternative: Create a "GenerationPhase" graph for the second half.
-        # Or just call the remaining agents manually in this method.
-        # Given the complexity, calling agents manually for the second half is safest for this prototype.
-        
-        print("  → Manually executing remaining phases...")
+        print(f"  → Bridge story length: {len(bridge_story)} chars")
+        print(f"  → Resume text length: {len(checkpoint_state.get('resume_text', ''))} chars")
+        print(f"  → Decoder analysis present: {bool(checkpoint_state.get('decoder_analysis'))}")
         
         # 1. Optimizer
+        print("\n[Manual Execution] Running Optimizer...")
         opt_state = await self.optimizer_node(checkpoint_state)
-        checkpoint_state.update(opt_state)
+        
+        # Check for errors
+        if opt_state.get("current_phase") == "error":
+            print("  ❌ Optimizer failed, stopping workflow")
+            return {**checkpoint_state, **opt_state}
+        
+        # Merge states properly
+        checkpoint_state = {**checkpoint_state, **opt_state}
+        
+        # Validate optimizer output
+        if not opt_state.get("resume_markdown"):
+            print("  ⚠ WARNING: Optimizer did not return resume_markdown")
+        else:
+            print(f"  ✓ Optimizer returned markdown ({len(opt_state['resume_markdown'])} chars)")
         
         # 2. Ghostwriter
+        print("\n[Manual Execution] Running Ghostwriter...")
         gw_state = await self.ghostwriter_node(checkpoint_state)
-        checkpoint_state.update(gw_state)
+        
+        # Check for errors
+        if gw_state.get("current_phase") == "error":
+            print("  ❌ Ghostwriter failed, stopping workflow")
+            return {**checkpoint_state, **gw_state}
+        
+        # Merge states properly
+        checkpoint_state = {**checkpoint_state, **gw_state}
+        
+        print("\n" + "=" * 80)
+        print(f"✅ Workflow resume complete")
+        print(f"  → Final phase: {checkpoint_state.get('current_phase')}")
+        print(f"  → Final state keys: {list(checkpoint_state.keys())}")
+        print(f"  → Has resume markdown: {bool(checkpoint_state.get('resume_markdown'))}")
+        print(f"  → Has essay draft: {bool(checkpoint_state.get('essay_draft'))}")
+        print("=" * 80)
         
         return checkpoint_state

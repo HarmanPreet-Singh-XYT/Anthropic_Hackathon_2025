@@ -78,7 +78,7 @@ const App = () => {
             </span>
             <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent font-bold">Agentiiv Hackathon 2025</span>
             <span className="text-slate-400">|</span>
-            <span className="text-slate-600 dark:text-slate-300">Team Velocity</span>
+            <span className="text-slate-600 dark:text-slate-300">Team</span>
           </div>
 
           {/* Headline */}
@@ -849,7 +849,7 @@ const App = () => {
             {/* NEW: TEAM SECTION */}
       <section className="py-20 border-t border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl font-bold mb-12">Built by Team Velocity</h2>
+          <h2 className="text-3xl font-bold mb-12">Built by Team</h2>
           
           <div className="flex flex-wrap justify-center gap-12">
             
@@ -963,7 +963,7 @@ const App = () => {
             <div>
               <h4 className="font-bold mb-6 text-slate-900 dark:text-white">Hackathon</h4>
               <ul className="space-y-4 text-sm text-slate-500">
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Team Velocity</a></li>
+                <li><a href="#" className="hover:text-blue-600 transition-colors">Team</a></li>
                 <li><a href="#" className="hover:text-blue-600 transition-colors">Agentiiv Challenge</a></li>
                 <li><a href="#" className="hover:text-blue-600 transition-colors">Github Repo</a></li>
                 <li><a href="#" className="hover:text-blue-600 transition-colors">Pitch Deck</a></li>

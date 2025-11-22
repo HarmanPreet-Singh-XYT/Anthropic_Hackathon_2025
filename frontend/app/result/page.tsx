@@ -1,12 +1,12 @@
 "use client"
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sparkles, FileDown, Copy, Check, Loader2, RefreshCw } from 'lucide-react';
+import { Sparkles, FileDown, Copy, Check, Loader2, RefreshCw, LucideIcon } from 'lucide-react';
 
-function cn(...inputs) {
+function cn(...inputs: (string | boolean | undefined | null)[]): string {
   return inputs.filter(Boolean).join(' ');
 }
 
-const GrainTexture = () => (
+const GrainTexture: React.FC = () => (
   <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-[0.03]">
     <svg className="h-full w-full">
       <filter id="noise">
@@ -17,11 +17,25 @@ const GrainTexture = () => (
   </div>
 );
 
-const SpotlightCard = ({ title, children, className = "", status }) => {
-  const [mouse, setMouse] = useState({ x: 0, y: 0 });
-  const [hovered, setHovered] = useState(false);
+type Status = 'idle' | 'loading' | 'success' | 'error';
 
-  const handleMouseMove = (e) => {
+interface SpotlightCardProps {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+  status?: Status;
+}
+
+const SpotlightCard: React.FC<SpotlightCardProps> = ({ 
+  title, 
+  children, 
+  className = "", 
+  status 
+}) => {
+  const [mouse, setMouse] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [hovered, setHovered] = useState<boolean>(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
@@ -72,8 +86,13 @@ const SpotlightCard = ({ title, children, className = "", status }) => {
   );
 };
 
-const EssayArea = ({ text, isLoading }) => {
-  const [copied, setCopied] = useState(false);
+interface EssayAreaProps {
+  text: string;
+  isLoading: boolean;
+}
+
+const EssayArea: React.FC<EssayAreaProps> = ({ text, isLoading }) => {
+  const [copied, setCopied] = useState<boolean>(false);
 
   const handleCopy = async () => {
     if (text) {
@@ -125,7 +144,25 @@ const EssayArea = ({ text, isLoading }) => {
   );
 };
 
-const PDFPreview = ({ pdfData, isLoading }) => {
+interface ResumeSection {
+  title: string;
+  content: string;
+}
+
+interface PDFData {
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  sections?: ResumeSection[];
+}
+
+interface PDFPreviewProps {
+  pdfData: PDFData | null;
+  isLoading: boolean;
+}
+
+const PDFPreview: React.FC<PDFPreviewProps> = ({ pdfData, isLoading }) => {
   if (isLoading && !pdfData) {
     return (
       <div className="h-full bg-black/40 rounded-xl border border-white/5 flex items-center justify-center">
@@ -170,13 +207,23 @@ const PDFPreview = ({ pdfData, isLoading }) => {
   );
 };
 
-const ApplicationUI = () => {
-  const [essayText, setEssayText] = useState('');
-  const [pdfData, setPdfData] = useState(null);
-  const [isPolling, setIsPolling] = useState(true);
-  const [status, setStatus] = useState({ essay: 'idle', resume: 'idle' });
+interface ApiResponse {
+  essay: string;
+  resume: PDFData;
+}
 
-  const mockApiResponse = useCallback(() => {
+interface StatusState {
+  essay: Status;
+  resume: Status;
+}
+
+const ApplicationUI: React.FC = () => {
+  const [essayText, setEssayText] = useState<string>('');
+  const [pdfData, setPdfData] = useState<PDFData | null>(null);
+  const [isPolling, setIsPolling] = useState<boolean>(true);
+  const [status, setStatus] = useState<StatusState>({ essay: 'idle', resume: 'idle' });
+
+  const mockApiResponse = useCallback((): Promise<ApiResponse> => {
     return new Promise((resolve) => {
       setTimeout(() => {
         resolve({
