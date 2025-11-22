@@ -77,16 +77,45 @@ export default function StartPage() {
         setSuccess(null);
 
         try {
-            const formData = new FormData();
-            formData.append('scholarship_url', url);
+            let resumeSessionId: string;
+
+            // Step 1: Upload resume and get session_id
             if (file) {
-                formData.append('resume_file', file);
+                console.log("[StartPage] Step 1: Uploading resume...");
+                const uploadFormData = new FormData();
+                uploadFormData.append('file', file);
+
+                const uploadResponse = await fetch(`${API_URL}/api/upload-resume`, {
+                    method: 'POST',
+                    body: uploadFormData,
+                });
+
+                if (!uploadResponse.ok) {
+                    const errorData = await uploadResponse.json();
+                    throw new Error(errorData.detail || 'Failed to upload resume');
+                }
+
+                const uploadData = await uploadResponse.json();
+                resumeSessionId = uploadData.metadata.session_id;
+
+                console.log("[StartPage] Resume uploaded, session_id:", resumeSessionId);
+                console.log(`[StartPage] Stored ${uploadData.chunks_stored} chunks`);
+
+                // Store session_id for potential later use
+                localStorage.setItem('resume_session_id', resumeSessionId);
+            } else {
+                throw new Error('Resume file is required');
             }
 
-            // Step 1: Start Workflow
+            // Step 2: Start workflow with resume session_id
+            console.log("[StartPage] Step 2: Starting workflow...");
+            const workflowFormData = new FormData();
+            workflowFormData.append('scholarship_url', url);
+            workflowFormData.append('resume_session_id', resumeSessionId);
+
             const response = await fetch(`${API_URL}/api/workflow/start`, {
                 method: 'POST',
-                body: formData,
+                body: workflowFormData,
             });
 
             if (!response.ok) {
@@ -94,10 +123,12 @@ export default function StartPage() {
                 throw new Error(errorData.detail || 'Failed to start workflow');
             }
 
-            const { session_id } = await response.json();
-            console.log("[StartPage] Workflow started, session:", session_id);
+            const { session_id: workflowSessionId } = await response.json();
+            console.log("[StartPage] Workflow started");
+            console.log(`  Resume session: ${resumeSessionId}`);
+            console.log(`  Workflow session: ${workflowSessionId}`);
 
-            // Step 2: Poll for completion
+            // Step 3: Poll for completion
             let completed = false;
             let pollCount = 0;
             const maxPolls = 60;
@@ -107,7 +138,7 @@ export default function StartPage() {
                 pollCount++;
 
                 const statusResponse = await fetch(
-                    `${API_URL}/api/workflow/status/${session_id}`
+                    `${API_URL}/api/workflow/status/${workflowSessionId}`
                 );
 
                 if (!statusResponse.ok) {
@@ -115,9 +146,9 @@ export default function StartPage() {
                 }
 
                 const statusData = await statusResponse.json();
-                console.log(`[StartPage] Poll #${pollCount}:`, statusData.status, statusData);
+                console.log(`[StartPage] Poll #${pollCount}:`, statusData.status);
 
-                if (statusData.status === 'processing') {
+                if (statusData.status === 'processing' || statusData.status === 'processing_resume') {
                     continue;
                 } else if (statusData.status === 'complete' || statusData.status === 'waiting_for_input') {
                     console.log("[StartPage] Workflow reached target state:", statusData.status);
@@ -129,7 +160,7 @@ export default function StartPage() {
 
                     console.log("[StartPage] Navigating to matchmaker...");
                     await new Promise(resolve => setTimeout(resolve, 800));
-                    router.push(`/matchmaker?session=${session_id}`);
+                    router.push(`/matchmaker?session=${workflowSessionId}`);
 
                 } else if (statusData.status === 'error') {
                     console.error("[StartPage] Workflow error:", statusData.error);
@@ -138,7 +169,7 @@ export default function StartPage() {
             }
 
             if (!completed) {
-                throw new Error("Workflow timed out");
+                throw new Error("Workflow timed out after 2 minutes");
             }
 
         } catch (err) {

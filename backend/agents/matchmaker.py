@@ -120,12 +120,17 @@ Example Output:
             primary_values = official.get("primary_values", ["Unknown"])
             return {val: 1.0 / len(primary_values) for val in primary_values}
 
-    async def _query_resume_for_keywords(self, weighted_values: Dict[str, float]) -> Dict[str, Dict]:
+    async def _query_resume_for_keywords(
+        self, 
+        weighted_values: Dict[str, float],
+        session_id: str
+    ) -> Dict[str, Dict]:
         """
         Query resume vector store for each weighted keyword
         
         Args:
             weighted_values: Dict mapping keywords to their importance weights
+            session_id: Session identifier to filter queries
             
         Returns:
             Dict mapping each keyword to its match data:
@@ -135,10 +140,13 @@ Example Output:
         """
         results = {}
         
+        print(f"🔍 [MatchmakerAgent] Querying vector DB for session: {session_id}")
+        
         for keyword, weight in weighted_values.items():
-            # Query ChromaDB for this keyword
-            query_result = self.vector_store.query(
+            # Query ChromaDB for this keyword, filtered by session
+            query_result = self.vector_store.query_with_filter(
                 query_text=keyword,
+                filter_dict={"session_id": session_id},  # Session isolation
                 n_results=3  # Top 3 matching chunks
             )
             
@@ -164,7 +172,7 @@ Example Output:
             }
             
             raw_dist = best_distance if 'best_distance' in locals() else "N/A"
-            print(f"  → {keyword} (weight: {weight:.0%}): match score = {best_match_score:.2f} (dist: {raw_dist})")
+            print(f"  → {keyword} (weight: {weight:.0%}): match score = {best_match_score:.2f} (dist: {raw_dist}) [session: {session_id}]")
 
         return results
 
@@ -309,13 +317,15 @@ Example Output:
 
     async def run(
         self,
-        decoder_analysis: Dict[str, Any]
+        decoder_analysis: Dict[str, Any],
+        session_id: str
     ) -> Dict[str, Any]:
         """
         Execute Matchmaker Agent workflow
 
         Args:
             decoder_analysis: Output from Decoder Agent containing weights
+            session_id: Session identifier for filtering vector queries
 
         Returns:
             Dict containing:
@@ -349,7 +359,7 @@ Example Output:
             print("  → This likely means the Decoder failed. Check Decoder logs above.")
             keyword_results = {}
         else:
-            keyword_results = await self._query_resume_for_keywords(weighted_values)
+            keyword_results = await self._query_resume_for_keywords(weighted_values, session_id)
         
         # STEP 3: Calculate overall match score
         print("\n[STEP 3] Calculating overall match score...")

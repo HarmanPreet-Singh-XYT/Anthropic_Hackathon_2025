@@ -15,6 +15,7 @@ class ScholarshipState(TypedDict):
     # Inputs
     scholarship_url: str
     resume_pdf_path: str
+    session_id: str  # Session identifier for vector DB isolation
 
     # Phase 1: Parallel Ingestion
     scholarship_intelligence: Optional[Dict[str, Any]]  # Scout output
@@ -142,12 +143,18 @@ class ScholarshipWorkflow:
         """Execute Profiler Agent - Phase 1"""
         print("\n🔵 NODE: Profiler Agent")
         
+        session_id = state.get("session_id")
+        print(f"🔄 [Workflow] Processing resume for session: {session_id}")
+        
         try:
-            # Run profiler
-            result = await self.agents["profiler"].run(state["resume_pdf_path"])
+            # Run profiler with session_id
+            result = await self.agents["profiler"].run(
+                state["resume_pdf_path"],
+                session_id=session_id
+            )
             return {
                 "resume_processed": True,
-                "resume_text": result.get("text", "")
+                "resume_text": result.get("resume_text", "")
             }
         except Exception as e:
             print(f"❌ Profiler failed: {e}")
@@ -180,9 +187,15 @@ class ScholarshipWorkflow:
         """Execute Matchmaker Agent - Phase 2"""
         print("\n🔵 NODE: Matchmaker Agent")
         
+        session_id = state.get("session_id")
+        print(f"🔄 [Workflow] Matching for session: {session_id}")
+        
         try:
             analysis = state.get("decoder_analysis", {})
-            result = await self.agents["matchmaker"].run(analysis)
+            result = await self.agents["matchmaker"].run(
+                analysis,
+                session_id=session_id
+            )
             
             return {
                 "match_score": result["match_score"],
@@ -271,14 +284,18 @@ class ScholarshipWorkflow:
     async def run(
         self,
         scholarship_url: str,
-        resume_pdf_path: str
+        resume_pdf_path: str,
+        session_id: str
     ) -> Dict[str, Any]:
         """Execute the full workflow"""
-        print(f"🚀 Starting Scholarship Workflow for {scholarship_url}")
+        print(f"🚀 Starting Scholarship Workflow")
+        print(f"   Session: {session_id}")
+        print(f"   URL: {scholarship_url}")
         
         initial_state = ScholarshipState(
             scholarship_url=scholarship_url,
             resume_pdf_path=resume_pdf_path,
+            session_id=session_id,
             current_phase="start",
             errors=[]
         )

@@ -113,36 +113,54 @@ class ProfilerAgent:
         # This method is kept for interface compatibility if we switch to manual embeddings later
         return []
 
-    async def store_in_vector_db(self, chunks: List[str], embeddings: List[List[float]] = None) -> None:
+    async def store_in_vector_db(
+        self, 
+        chunks: List[str], 
+        session_id: str,
+        embeddings: List[List[float]] = None
+    ) -> None:
         """
         Store chunks and embeddings in ChromaDB
 
         Args:
             chunks: Text chunks
+            session_id: Unique session identifier for isolation
             embeddings: Corresponding embedding vectors (optional, ChromaDB handles this)
         """
         if not chunks:
             return
+        
+        print(f"📝 [ProfilerAgent] Storing resume for session: {session_id}")
             
-        # Add to vector store
-        # We use simple indexing for metadata to keep track of order
+        # Add to vector store with session_id for isolation
         self.vector_store.add_documents(
             documents=chunks,
-            metadatas=[{"source": "resume", "chunk_index": i} for i in range(len(chunks))]
+            metadatas=[
+                {
+                    "source": "resume", 
+                    "chunk_index": i,
+                    "session_id": session_id  # Session isolation
+                } 
+                for i in range(len(chunks))
+            ]
         )
+        
+        print(f"✓ [ProfilerAgent] Stored {len(chunks)} chunks for session: {session_id}")
 
-    async def run(self, resume_pdf_path: str) -> Dict[str, Any]:
+    async def run(self, resume_pdf_path: str, session_id: str) -> Dict[str, Any]:
         """
         Execute Profiler Agent workflow
 
         Args:
             resume_pdf_path: Path to student's resume PDF
+            session_id: Unique session identifier for isolation
 
         Returns:
             Dict containing:
                 - success: Boolean indicating completion
                 - chunks_stored: Number of chunks stored
                 - resume_text: Full extracted text
+                - session_id: Session identifier used
         """
         try:
             # 1. Parse PDF
@@ -159,12 +177,13 @@ class ProfilerAgent:
                 }
             
             # 3. Store in vector DB (embeddings handled automatically)
-            await self.store_in_vector_db(chunks)
+            await self.store_in_vector_db(chunks, session_id)
             
             return {
                 "success": True,
                 "chunks_stored": len(chunks),
-                "resume_text": resume_text
+                "resume_text": resume_text,
+                "session_id": session_id
             }
             
         except Exception as e:

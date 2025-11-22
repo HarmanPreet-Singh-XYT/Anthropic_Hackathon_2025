@@ -236,14 +236,31 @@ async def upload_resume(file: UploadFile = File(...)):
     temp_filename = f"{uuid.uuid4()}_{file.filename}"
     temp_path = UPLOADS_DIR / temp_filename
     
+    
+    # Generate unique session ID for this resume
+    session_id = str(uuid.uuid4())
+    print(f"🆔 [API] Generated session_id: {session_id} for resume upload")
+    
     try:
         # Write file to disk
         with open(temp_path, "wb") as f:
             f.write(file_content)
         
+        # Optional: Clean up any old data for this session (if re-uploading)
+        # This prevents accumulation if the same session_id is reused
+        try:
+            all_docs = vector_store.collection.get(
+                where={"session_id": session_id}
+            )
+            if all_docs["ids"]:
+                print(f"🗑️ [API] Cleaning {len(all_docs['ids'])} old chunks for session: {session_id}")
+                vector_store.delete_documents(all_docs["ids"])
+        except Exception as e:
+            print(f"⚠️ [API] Could not clean old session data: {e}")
+        
         # Process with ProfilerAgent
         profiler = ProfilerAgent(vector_store)
-        result = await profiler.run(str(temp_path))
+        result = await profiler.run(str(temp_path), session_id=session_id)
         
         if not result.get("success"):
             error_msg = result.get("error", "Unknown error during processing")
@@ -252,12 +269,15 @@ async def upload_resume(file: UploadFile = File(...)):
                 detail=f"Failed to process PDF: {error_msg}"
             )
         
+        print(f"✓ [API] Resume processed successfully for session: {session_id}")
+        
         # Build response
         return UploadResponse(
             success=True,
             message="Resume processed successfully",
             chunks_stored=result.get("chunks_stored", 0),
             metadata={
+                "session_id": session_id,  # Return to frontend
                 "filename": file.filename,
                 "file_size_bytes": file_size,
                 "file_size_mb": round(file_size / 1024 / 1024, 2),
@@ -303,8 +323,6 @@ async def get_resume_stats():
         }
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting stats: {str(e)}"
         )
 
 
@@ -343,6 +361,62 @@ async def clear_resume():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error clearing resume data: {str(e)}"
         )
+
+
+@app.delete("/api/resume/session/{session_id}")
+async def delete_session_data(session_id: str):
+    """
+    Delete resume data for a specific session
+    
+    Args:
+        session_id: Session ID from resume upload
+        
+    Returns:
+        Success status and number of documents deleted
+    """
+    if vector_store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vector store not initialized"
+        )
+    
+    try:
+        print(f"🗑️ [API] Deleting resume data for session: {session_id}")
+        
+        # Get all documents for this session
+        all_docs = vector_store.collection.get(
+            where={"session_id": session_id}
+        )
+        
+        if not all_docs["ids"]:
+            print(f"   ℹ️ No documents found for session: {session_id}")
+            return {
+                "success": True,
+                "message": "No documents found for this session",
+                "documents_deleted": 0,
+                "session_id": session_id
+            }
+        
+        # Delete the documents
+        vector_store.delete_documents(all_docs["ids"])
+        deleted_count = len(all_docs["ids"])
+        
+        print(f"   ✓ Deleted {deleted_count} documents for session: {session_id}")
+        
+        return {
+            "success": True,
+            "message": f"Session data deleted successfully",
+            "documents_deleted": deleted_count,
+            "session_id": session_id
+        }
+    
+    except Exception as e:
+        print(f"   ❌ Error deleting session {session_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting session data: {str(e)}"
+        )
+
 
 
 # ==================== Scout Workflow Endpoints ====================
@@ -435,6 +509,7 @@ async def get_scout_status(session_id: str):
 async def start_workflow(
     background_tasks: BackgroundTasks,
     scholarship_url: str = Form(...),
+    resume_session_id: str = Form(...),  # Session ID from resume upload
     resume_file: Optional[UploadFile] = File(None),
     resume_path: Optional[str] = Form(None)
 ):
@@ -443,6 +518,7 @@ async def start_workflow(
     
     Args:
         scholarship_url: URL of scholarship
+        resume_session_id: Session ID from resume upload (for vector DB filtering)
         resume_file: Uploaded PDF resume (optional)
         resume_path: Path to already uploaded resume (optional)
     """
@@ -455,6 +531,7 @@ async def start_workflow(
     # Handle resume source
     target_resume_path = resume_path
     
+    # If resume_file is provided, save it temporarily
     if resume_file:
         # Process uploaded file similar to upload_resume
         temp_filename = f"{uuid.uuid4()}_{resume_file.filename}"
@@ -463,19 +540,29 @@ async def start_workflow(
         with open(temp_path, "wb") as f:
             f.write(content)
         target_resume_path = str(temp_path)
-        
-    if not target_resume_path:
+    
+    # For session-based workflow, we don't need resume_path
+    # The resume was already uploaded and processed via /api/upload-resume
+    # We just need the session_id to query the vector DB
+    if not target_resume_path and not resume_session_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must provide either resume_file or resume_path"
+            detail="Must provide either resume_file, resume_path, or resume_session_id"
         )
-        
-    # Generate session ID
-    session_id = str(uuid.uuid4())
     
-    # Initialize session
-    workflow_sessions[session_id] = {
-        "session_id": session_id,
+    # Use a dummy path if we're using session-based approach
+    if not target_resume_path:
+        target_resume_path = "session_based"  # Placeholder - not actually used
+        
+    print(f"🆔 [API] Starting workflow with resume session: {resume_session_id}")
+    
+    # Generate workflow session ID (different from resume session_id)
+    workflow_session_id = str(uuid.uuid4())
+    
+    # Initialize workflow session
+    workflow_sessions[workflow_session_id] = {
+        "session_id": workflow_session_id,
+        "resume_session_id": resume_session_id,  # Track resume session
         "status": "processing",
         "created_at": datetime.utcnow().isoformat(),
         "scholarship_url": scholarship_url,
@@ -487,31 +574,33 @@ async def start_workflow(
     # Background task wrapper
     async def run_workflow_background():
         try:
-            print(f"[Workflow Task] Starting for session {session_id}")
+            print(f"[Workflow Task] Starting for workflow session {workflow_session_id}")
+            print(f"[Workflow Task] Using resume session: {resume_session_id}")
             
-            # Run workflow
+            # Run workflow with resume session ID
             final_state = await workflow_orchestrator.run(
                 scholarship_url=scholarship_url,
-                resume_pdf_path=target_resume_path
+                resume_pdf_path=target_resume_path,
+                session_id=resume_session_id  # Pass resume session for vector queries
             )
             
             # Check for interrupt (Matchmaker complete or Interview needed)
             # If we have matchmaker results but no essay, we are paused
             if final_state.get("matchmaker_results") and not final_state.get("essay_draft"):
-                workflow_sessions[session_id]["status"] = "waiting_for_input"
-                workflow_sessions[session_id]["result"] = {
+                workflow_sessions[workflow_session_id]["status"] = "waiting_for_input"
+                workflow_sessions[workflow_session_id]["result"] = {
                     "matchmaker_results": final_state.get("matchmaker_results"),
                     "context": "Review match results before proceeding",
                     # Include gaps if any for the frontend to decide on interview
                     "gaps": final_state.get("identified_gaps"),
                     "trigger_interview": final_state.get("trigger_interview")
                 }
-                workflow_sessions[session_id]["state"] = final_state
+                workflow_sessions[workflow_session_id]["state"] = final_state
             else:
-                workflow_sessions[session_id]["status"] = "complete"
+                workflow_sessions[workflow_session_id]["status"] = "complete"
                 # Explicitly structure the result to match frontend expectations
                 # and avoid sending the entire state (which can be huge)
-                workflow_sessions[session_id]["result"] = {
+                workflow_sessions[workflow_session_id]["result"] = {
                     "matchmaker_results": final_state.get("matchmaker_results"),
                     "essay_draft": final_state.get("essay_draft"),
                     "strategy_note": final_state.get("strategy_note"),
@@ -519,17 +608,17 @@ async def start_workflow(
                     "gaps": final_state.get("identified_gaps")
                 }
                 
-            print(f"[Workflow Task] Finished step for session {session_id}")
+            print(f"[Workflow Task] Finished step for workflow session {workflow_session_id}")
             
         except Exception as e:
-            print(f"[Workflow Task] Error for session {session_id}: {e}")
-            workflow_sessions[session_id]["status"] = "error"
-            workflow_sessions[session_id]["error"] = str(e)
+            print(f"[Workflow Task] Error for workflow session {workflow_session_id}: {e}")
+            workflow_sessions[workflow_session_id]["status"] = "error"
+            workflow_sessions[workflow_session_id]["error"] = str(e)
             
     background_tasks.add_task(run_workflow_background)
     
     return {
-        "session_id": session_id,
+        "session_id": workflow_session_id,
         "status": "processing",
         "message": "Scholarship workflow started"
     }
