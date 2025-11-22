@@ -495,18 +495,29 @@ async def start_workflow(
                 resume_pdf_path=target_resume_path
             )
             
-            # Check for interrupt (Interview needed)
-            if final_state.get("interview_question"):
+            # Check for interrupt (Matchmaker complete or Interview needed)
+            # If we have matchmaker results but no essay, we are paused
+            if final_state.get("matchmaker_results") and not final_state.get("essay_draft"):
                 workflow_sessions[session_id]["status"] = "waiting_for_input"
                 workflow_sessions[session_id]["result"] = {
-                    "question": final_state["interview_question"],
-                    "context": "Interview required to fill gaps",
-                    "matchmaker_results": final_state.get("matchmaker_results")
+                    "matchmaker_results": final_state.get("matchmaker_results"),
+                    "context": "Review match results before proceeding",
+                    # Include gaps if any for the frontend to decide on interview
+                    "gaps": final_state.get("identified_gaps"),
+                    "trigger_interview": final_state.get("trigger_interview")
                 }
                 workflow_sessions[session_id]["state"] = final_state
             else:
                 workflow_sessions[session_id]["status"] = "complete"
-                workflow_sessions[session_id]["result"] = final_state
+                # Explicitly structure the result to match frontend expectations
+                # and avoid sending the entire state (which can be huge)
+                workflow_sessions[session_id]["result"] = {
+                    "matchmaker_results": final_state.get("matchmaker_results"),
+                    "essay_draft": final_state.get("essay_draft"),
+                    "strategy_note": final_state.get("strategy_note"),
+                    "match_score": final_state.get("match_score"),
+                    "gaps": final_state.get("identified_gaps")
+                }
                 
             print(f"[Workflow Task] Finished step for session {session_id}")
             
@@ -528,10 +539,10 @@ async def start_workflow(
 async def resume_workflow(
     background_tasks: BackgroundTasks,
     session_id: str = Form(...),
-    bridge_story: str = Form(...)
+    bridge_story: Optional[str] = Form(None)
 ):
     """
-    Resume workflow with student's bridge story
+    Resume workflow with student's bridge story (optional)
     """
     if workflow_orchestrator is None:
         raise HTTPException(status_code=503, detail="System not initialized")
@@ -557,7 +568,14 @@ async def resume_workflow(
             )
             
             session["status"] = "complete"
-            session["result"] = final_state
+            session["result"] = {
+                "matchmaker_results": final_state.get("matchmaker_results"),
+                "essay_draft": final_state.get("essay_draft"),
+                "resume_optimizations": final_state.get("resume_optimizations"),
+                "strategy_note": final_state.get("strategy_note"),
+                "match_score": final_state.get("match_score"),
+                "gaps": final_state.get("identified_gaps")
+            }
             print(f"[Workflow Task] Completed session {session_id}")
             
         except Exception as e:

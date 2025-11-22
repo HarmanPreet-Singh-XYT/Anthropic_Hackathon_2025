@@ -99,6 +99,7 @@ export default function StartPage() {
             }
 
             const { session_id } = await response.json();
+            console.log("[StartPage] Workflow started, session:", session_id);
 
             // Step 2: Poll for completion
             let completed = false;
@@ -118,12 +119,14 @@ export default function StartPage() {
                 }
 
                 const statusData = await statusResponse.json();
+                console.log(`[StartPage] Poll #${pollCount}:`, statusData.status, statusData);
 
                 if (statusData.status === 'processing') {
                     // Continue polling
                     continue;
 
                 } else if (statusData.status === 'complete' || statusData.status === 'waiting_for_input') {
+                    console.log("[StartPage] Workflow reached target state:", statusData.status);
                     completed = true;
                     setSuccess({
                         message: "Analysis complete!",
@@ -131,10 +134,12 @@ export default function StartPage() {
                     });
 
                     // Navigate to results
+                    console.log("[StartPage] Navigating to matchmaker...");
                     await new Promise(resolve => setTimeout(resolve, 800));
                     router.push(`/matchmaker?session=${session_id}`);
 
                 } else if (statusData.status === 'error') {
+                    console.error("[StartPage] Workflow error:", statusData.error);
                     throw new Error(statusData.error || 'Workflow failed');
                 }
             }

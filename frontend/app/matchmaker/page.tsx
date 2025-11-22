@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ArrowRight, CheckCircle2, AlertCircle, TrendingUp } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 // --- Types ---
 interface MatchComponent {
@@ -28,8 +28,8 @@ export default function MatchmakerPage() {
     const router = useRouter();
 
     // Load match data on mount
-    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const session_id = searchParams?.get('session');
+    const searchParams = useSearchParams();
+    const session_id = searchParams.get('session');
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
     // Load match data on mount
@@ -38,13 +38,16 @@ export default function MatchmakerPage() {
 
         const fetchData = async () => {
             try {
+                console.log("Fetching status for:", session_id);
                 const response = await fetch(`${API_URL}/api/workflow/status/${session_id}`);
                 if (!response.ok) throw new Error("Failed to fetch data");
 
                 const data = await response.json();
+                console.log("Status data:", data);
 
                 // Handle both "complete" and "waiting_for_input" statuses
                 if ((data.status === "complete" || data.status === "waiting_for_input") && data.result && data.result.matchmaker_results) {
+                    console.log("[Matchmaker] Results received:", data.result.matchmaker_results);
                     const results = data.result.matchmaker_results;
 
                     // Map backend data to frontend structure
@@ -60,7 +63,8 @@ export default function MatchmakerPage() {
                         };
                     });
 
-                    // Set match data even if components is empty (edge case: decoder failed)
+                    // Set match data
+                    console.log("[Matchmaker] Setting match data with components:", components);
                     setMatchData({
                         overall_score: results.match_score || 0,
                         status: (results.match_score || 0) >= 0.8 ? 'strong_match' : (results.match_score || 0) >= 0.6 ? 'good_match' : 'needs_improvement',
@@ -68,8 +72,11 @@ export default function MatchmakerPage() {
                         gaps: results.gaps || []
                     });
                 } else if (data.status === "processing") {
+                    console.log("[Matchmaker] Still processing...");
                     // Still processing, poll again
                     setTimeout(fetchData, 2000);
+                } else {
+                    console.warn("[Matchmaker] Unexpected status or missing data:", data);
                 }
             } catch (e) {
                 console.error("Error fetching match data:", e);
@@ -312,10 +319,34 @@ export default function MatchmakerPage() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 1.4 }}
-                            onClick={() => router.push(`/ai-help?session=${session_id}`)}
+                            onClick={() => {
+                                if (matchData.gaps.length === 0) {
+                                    // No gaps, skip interview and go to application
+                                    // We need to trigger resume with empty story first
+                                    const resumeWorkflow = async () => {
+                                        try {
+                                            const formData = new FormData();
+                                            formData.append('session_id', session_id!);
+                                            formData.append('bridge_story', '');
+                                            await fetch(`${API_URL}/api/workflow/resume`, { method: 'POST', body: formData });
+                                            router.push(`/application?session=${session_id}`);
+                                        } catch (e) {
+                                            console.error("Error resuming workflow:", e);
+                                            router.push(`/application?session=${session_id}`);
+                                        }
+                                    };
+                                    resumeWorkflow();
+                                } else {
+                                    router.push(`/ai-help?session=${session_id}`);
+                                }
+                            }}
                             className="w-full h-12 rounded-xl font-medium text-base flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10 transition-all duration-300"
                         >
-                            Continue to AI Help <ArrowRight className="w-4 h-4" />
+                            {matchData.gaps.length === 0 ? (
+                                <>Continue to Application <ArrowRight className="w-4 h-4" /></>
+                            ) : (
+                                <>Continue to AI Help <ArrowRight className="w-4 h-4" /></>
+                            )}
                         </motion.button>
 
                     </div>

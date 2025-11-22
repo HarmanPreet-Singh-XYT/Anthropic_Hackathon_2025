@@ -33,4 +33,7 @@ Generate ONE specific question that:
 
 ## Output
 
+## Output
+
 Generate a single, conversational question following the format above.
+IMPORTANT: Do NOT use placeholders like "[insert resume detail here]". Actually USE the details provided in the Resume Summary above to make the question specific.

@@ -120,7 +120,7 @@ class ScholarshipWorkflow:
         # Ghostwriter -> End
         workflow.add_edge("ghostwriter", END)
 
-        return workflow.compile(interrupt_after=["interviewer"])
+        return workflow.compile(interrupt_after=["matchmaker"])
 
     async def scout_node(self, state: ScholarshipState) -> ScholarshipState:
         """Execute Scout Agent - Phase 1"""

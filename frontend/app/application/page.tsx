@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, FileDown, Loader2, CheckCircle } from 'lucide-react';
+import { Sparkles, FileDown, Loader2, CheckCircle, Copy } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -22,6 +22,7 @@ export default function ApplicationPage() {
     const [applicationData, setApplicationData] = useState<ApplicationData | null>(null);
     const [isExporting, setIsExporting] = useState(false);
     const [exportSuccess, setExportSuccess] = useState(false);
+    const [copiedResume, setCopiedResume] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
     const session_id = searchParams.get('session');
@@ -94,6 +95,17 @@ export default function ApplicationPage() {
         } finally {
             setIsExporting(false);
         }
+    };
+
+    // Copy Resume Function
+    const handleCopyResume = () => {
+        if (!applicationData?.resume_optimizations) return;
+        const text = applicationData.resume_optimizations
+            .map(opt => opt.optimized)
+            .join('\n');
+        navigator.clipboard.writeText(text);
+        setCopiedResume(true);
+        setTimeout(() => setCopiedResume(false), 2000);
     };
 
     if (!applicationData) {
@@ -215,9 +227,18 @@ export default function ApplicationPage() {
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
 
                         {/* Section Header */}
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-2 h-2 rounded-full bg-white" />
-                            <h2 className="text-xs font-bold tracking-widest text-white uppercase">Resume</h2>
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full bg-white" />
+                                <h2 className="text-xs font-bold tracking-widest text-white uppercase">Resume Improvements</h2>
+                            </div>
+                            <button
+                                onClick={handleCopyResume}
+                                className="text-xs flex items-center gap-2 text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
+                            >
+                                {copiedResume ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                                {copiedResume ? "Copied All" : "Copy Optimized"}
+                            </button>
                         </div>
 
                         {/* Resume Content */}

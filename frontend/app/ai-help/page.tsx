@@ -211,10 +211,34 @@ export default function AIHelpPage() {
         }
     };
 
-    const handleSkipInterview = () => {
-        localStorage.removeItem('bridge_story');
-        localStorage.removeItem('session_id');
-        router.push(`/application?session=${sessionId}`);
+    const handleSkipInterview = async () => {
+        if (!sessionId) return;
+
+        try {
+            // Resume workflow with empty bridge story to trigger generation
+            const formData = new FormData();
+            formData.append('session_id', sessionId);
+            // Send empty string or specific skip message
+            formData.append('bridge_story', '');
+
+            const response = await fetch(`${API_URL}/api/workflow/resume`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to resume workflow');
+            }
+
+            localStorage.removeItem('bridge_story');
+            localStorage.removeItem('session_id');
+            router.push(`/application?session=${sessionId}`);
+
+        } catch (err) {
+            console.error('Error skipping interview:', err);
+            // Fallback navigation
+            router.push(`/application?session=${sessionId}`);
+        }
     };
 
     const handleContinueToApplication = async () => {

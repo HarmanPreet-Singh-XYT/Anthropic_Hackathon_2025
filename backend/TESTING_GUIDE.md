@@ -1,6 +1,35 @@
 # Backend API Testing Guide
 
-## Quick Start - Test the API Server
+## Quick Start - Verify Agents & Workflow
+
+### 1. Run End-to-End Workflow Test
+This tests the full chain: Scout -> Profiler -> Matchmaker -> Interviewer -> Optimizer.
+
+```bash
+# From the project root
+python3 backend/test_e2e.py
+```
+
+**Success Criteria:**
+- Match Score should be > 40% (e.g., ~59%).
+- Workflow should proceed to `optimizer` phase.
+- No critical errors in logs.
+
+### 2. Verify Scout Agent (Search)
+This tests if the Scout can find real data from the web.
+
+```bash
+# From the project root
+python3 backend/verify_scout.py
+```
+
+**Success Criteria:**
+- Should find > 0 "validated winner items".
+- Should find > 0 "insights".
+
+---
+
+## API Testing - Test the Server
 
 ### 1. Start the Backend Server
 

@@ -28,8 +28,8 @@ class MatchmakerAgent:
         """
         self.vector_store = vector_store
         self.llm_client = llm_client
-        self.threshold = 0.4  # Match score threshold (lowered significantly for testing)
-        self.gap_threshold = 0.5  # Individual keyword gap threshold
+        self.threshold = 0.7  # Match score threshold (raised to ensure high quality)
+        self.gap_threshold = 0.65  # Individual keyword gap threshold
 
     async def _generate_weighted_values(self, scout_intelligence: Dict) -> Dict[str, float]:
         """

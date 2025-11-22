@@ -46,11 +46,17 @@ Return a JSON object:
 
 ```json
 {
-  "essay": "full essay text here",
-  "strategy_note": "Explanation of why this narrative approach aligns with the scholarship's priorities",
+  "essay": "full essay text here (escape all quotes and newlines)",
+  "strategy_note": "Explanation...",
   "word_count": 487
 }
 ```
+
+**CRITICAL JSON RULES:**
+1. Escape all double quotes inside strings: `\"`
+2. Escape all newlines inside strings: `\n`
+3. Do NOT use unescaped control characters (tabs, newlines) inside strings.
+4. Ensure the output is valid parseable JSON.
 
 ## Example Strategy Note
 
