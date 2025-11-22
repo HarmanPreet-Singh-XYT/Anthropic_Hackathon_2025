@@ -33,6 +33,8 @@ class OfficialScholarshipData(BaseModel):
     """Structured data from official scholarship page"""
     scholarship_name: str = Field(description="Official scholarship name")
     organization: Optional[str] = Field(None, description="Sponsoring organization")
+    contact_email: Optional[str] = Field(None, description="Official contact email address")
+    contact_name: Optional[str] = Field(None, description="Name of contact person or committee")
     keywords: List[str] = Field(
         default_factory=list,
         description="High-signal keywords and phrases stated on the page"

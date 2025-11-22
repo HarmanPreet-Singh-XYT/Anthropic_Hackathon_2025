@@ -113,6 +113,8 @@ RETURN VALID JSON WITH THESE EXACT FIELDS:
 {{
   "scholarship_name": "string (required)",
   "organization": "string or null",
+  "contact_email": "string or null",
+  "contact_name": "string or null",
   "keywords": ["list of strings"],
   "explicit_requirements": ["list of strings"],
   "explicit_instructions": ["list of strings"],
@@ -480,6 +482,10 @@ OUTPUT JSON ONLY.
         print("\n[STEP 1] Scraping official page...")
         official_data = await self.scrape_official_page(scholarship_url)
         
+        # Prompt for official_data extraction:
+        # - scholarship_name, organization
+        # - contact_email, contact_name (if available)
+        # - keywords: high-signal phrases on the page
         scholarship_name = official_data.scholarship_name
         print(f"  ✓ Identified: {scholarship_name}")
         

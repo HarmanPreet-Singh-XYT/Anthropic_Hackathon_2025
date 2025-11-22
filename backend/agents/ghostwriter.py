@@ -196,3 +196,49 @@ class GhostwriterAgent:
             bridge_story=bridge_story,
             word_limit=word_limit
         )
+
+    async def draft_outreach_email(
+        self,
+        scholarship_name: str,
+        organization: str,
+        contact_name: Optional[str],
+        gaps: List[str],
+        student_context: str
+    ) -> Dict[str, str]:
+        """
+        Draft an outreach email to the scholarship committee
+        """
+        print("  → Ghostwriter drafting outreach email...")
+        
+        try:
+            full_prompt = load_prompt(
+                "outreach",
+                {
+                    "scholarship_name": scholarship_name,
+                    "organization": organization or "Scholarship Committee",
+                    "contact_name": contact_name or "Scholarship Committee",
+                    "gaps": ", ".join(gaps) if gaps else "general application details",
+                    "student_context": student_context[:1000]
+                }
+            )
+            
+            system_instruction = "You are an expert communications coach. Output valid JSON only."
+            
+            response_text = await self.llm_client.call(
+                system_prompt=system_instruction,
+                user_message=full_prompt
+            )
+            
+            # Simple JSON parsing (reusing logic would be better, but keeping it self-contained for now)
+            cleaned = response_text.strip()
+            if cleaned.startswith("```json"): cleaned = cleaned[7:]
+            if cleaned.endswith("```"): cleaned = cleaned[:-3]
+            
+            return json.loads(cleaned.strip())
+            
+        except Exception as e:
+            print(f"  ⚠ Outreach email generation failed: {e}")
+            return {
+                "subject": f"Inquiry regarding {scholarship_name}",
+                "body": "Error generating email body."
+            }
