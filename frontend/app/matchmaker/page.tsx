@@ -122,7 +122,7 @@ export default function MatchmakerPage() {
     const StatusIcon = statusConfig.icon;
 
     return (
-        <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
+        <div className="h-screen bg-[#050505] text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
 
             {/* Background Stars/Particles */}
             <div className="absolute inset-0 z-0 pointer-events-none">
@@ -146,22 +146,22 @@ export default function MatchmakerPage() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[150px]" />
             </div>
 
-            <div className="relative z-10 w-full max-w-3xl px-6 flex flex-col items-center">
+            <div className="relative z-10 w-full max-w-3xl px-6 flex flex-col items-center py-4">
 
                 {/* Header */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8, ease: "easeOut" }}
-                    className="text-center mb-12"
+                    className="text-center mb-6"
                 >
-                    <div className="inline-flex items-center justify-center mb-6">
-                        <Sparkles className="w-12 h-12 text-white fill-white" />
+                    <div className="inline-flex items-center justify-center mb-3">
+                        <Sparkles className="w-10 h-10 text-white fill-white" />
                     </div>
-                    <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-4">
+                    <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-2">
                         Your Application Match
                     </h1>
-                    <p className="text-zinc-500 text-lg font-light tracking-wide">
+                    <p className="text-zinc-500 text-base font-light tracking-wide">
                         Ready to impress
                     </p>
                 </motion.div>
@@ -171,50 +171,49 @@ export default function MatchmakerPage() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
-                    className="w-full bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-[32px] p-8 md:p-10 shadow-2xl shadow-black/50 relative overflow-hidden"
+                    className="w-full bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-[24px] p-6 md:p-8 shadow-2xl shadow-black/50 relative overflow-hidden"
                 >
                     {/* Inner Glow */}
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
 
-                    <div className="space-y-10">
+                    <div className="space-y-6">
 
                         {/* Overall Score Section */}
-                        <div className="text-center space-y-6">
+                        <div className="flex items-center justify-center gap-8">
                             {/* Circular Progress */}
                             <div className="relative inline-flex items-center justify-center">
                                 {/* Background Circle */}
-                                <svg className="w-48 h-48 transform -rotate-90">
+                                <svg className="w-36 h-36 transform -rotate-90">
                                     <circle
-                                        cx="96"
-                                        cy="96"
-                                        r="88"
+                                        cx="72"
+                                        cy="72"
+                                        r="66"
                                         stroke="currentColor"
-                                        strokeWidth="8"
+                                        strokeWidth="6"
                                         fill="none"
                                         className="text-white/10"
                                     />
                                     {/* Progress Circle */}
                                     <motion.circle
-                                        cx="96"
-                                        cy="96"
-                                        r="88"
+                                        cx="72"
+                                        cy="72"
+                                        r="66"
                                         stroke="currentColor"
-                                        strokeWidth="8"
+                                        strokeWidth="6"
                                         fill="none"
                                         strokeLinecap="round"
                                         className={statusConfig.color}
-                                        initial={{ strokeDasharray: "0 552" }}
-                                        animate={{ strokeDasharray: `${animatedScore * 552} 552` }}
+                                        initial={{ strokeDasharray: "0 414" }}
+                                        animate={{ strokeDasharray: `${animatedScore * 414} 414` }}
                                         transition={{ duration: 1.5, ease: "easeOut" }}
                                     />
                                 </svg>
 
                                 {/* Center Text */}
-                                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <div className="text-6xl font-bold tracking-tight">
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="text-5xl font-bold tracking-tight">
                                         {Math.round(animatedScore * 100)}%
                                     </div>
-                                    <div className="text-sm text-zinc-500 mt-1">Match Score</div>
                                 </div>
                             </div>
 
@@ -231,13 +230,13 @@ export default function MatchmakerPage() {
                         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
                         {/* Component Breakdown */}
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                             <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-zinc-400 uppercase">
                                 <div className="w-2 h-2 rounded-full bg-white" />
                                 Component Alignment
                             </div>
 
-                            <div className="space-y-4">
+                            <div className="space-y-3">
                                 {matchData.components.map((component, index) => (
                                     <motion.div
                                         key={component.name}
@@ -274,36 +273,15 @@ export default function MatchmakerPage() {
                             </div>
                         </div>
 
-                        {/* Gaps Alert (if any) */}
-                        {matchData.gaps.length > 0 && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 1.2 }}
-                                className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-start gap-3"
-                            >
-                                <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                    <p className="text-sm text-yellow-200 font-medium mb-1">
-                                        Areas for Improvement
-                                    </p>
-                                    <p className="text-xs text-yellow-300/70">
-                                        {matchData.gaps.join(', ')} could be strengthened in your application.
-                                        Our AI will help you address these gaps.
-                                    </p>
-                                </div>
-                            </motion.div>
-                        )}
-
                         {/* Action Button */}
                         <motion.button
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 1.4 }}
                             onClick={() => router.push('/ai-help')}
-                            className="w-full h-16 rounded-xl font-medium text-lg flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10 transition-all duration-300"
+                            className="w-full h-12 rounded-xl font-medium text-base flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10 transition-all duration-300"
                         >
-                            Continue to AI Help <ArrowRight className="w-5 h-5" />
+                            Continue to AI Help <ArrowRight className="w-4 h-4" />
                         </motion.button>
 
                     </div>

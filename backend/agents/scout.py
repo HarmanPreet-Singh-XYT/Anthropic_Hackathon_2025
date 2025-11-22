@@ -714,9 +714,10 @@ Base your answer ONLY on the provided page content. Do not guess beyond the page
         
         # STEP 2: Deep Search (Using accurate name)
         print(f"\n[STEP 2] Starting deep search for '{scholarship_name}'...")
-        
+
         past_winner_context = await self.deep_search_parallel(
             scholarship_url=scholarship_url,
+            scholarship_hint=scholarship_name,
             debug=debug
         )
 

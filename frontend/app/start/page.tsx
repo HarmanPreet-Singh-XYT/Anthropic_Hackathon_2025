@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -13,8 +13,6 @@ export default function StartPage() {
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<{ message: string; chunks: number } | null>(null);
-    const [progress, setProgress] = useState<number>(0);
-    const [statusMessage, setStatusMessage] = useState<string>('');
     const router = useRouter();
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -80,15 +78,10 @@ export default function StartPage() {
         setIsSubmitting(true);
         setError(null);
         setSuccess(null);
-        setProgress(0);
-        setStatusMessage('Starting...');
 
         try {
             // Step 1: Upload resume (if provided)
             if (file) {
-                setStatusMessage('Uploading resume...');
-                setProgress(20);
-
                 const response = await uploadResume(file);
 
                 setSuccess({
@@ -99,9 +92,6 @@ export default function StartPage() {
 
             // Step 2: Start Scout workflow (if URL provided)
             if (url) {
-                setStatusMessage('Analyzing scholarship...');
-                setProgress(file ? 40 : 30);
-
                 const scoutFormData = new FormData();
                 scoutFormData.append('scholarship_url', url);
 
@@ -118,16 +108,6 @@ export default function StartPage() {
 
                 // Step 3: Poll for completion
                 let completed = false;
-                let currentProgress = file ? 40 : 30;
-
-                const statusMessages = [
-                    'Scraping scholarship page...',
-                    'Searching for past winners...',
-                    'Finding application tips...',
-                    'Analyzing community insights...',
-                    'Validating information...'
-                ];
-                let messageIndex = 0;
 
                 while (!completed) {
                     await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2s
@@ -142,18 +122,11 @@ export default function StartPage() {
 
                     const statusData = await statusResponse.json();
 
-                    // Update progress
-                    currentProgress = Math.min(90, currentProgress + 10);
-                    setProgress(currentProgress);
-
                     if (statusData.status === 'processing') {
-                        // Cycle through status messages
-                        setStatusMessage(statusMessages[messageIndex % statusMessages.length]);
-                        messageIndex++;
+                        // Continue polling
+                        continue;
 
                     } else if (statusData.status === 'complete') {
-                        setProgress(100);
-                        setStatusMessage('Complete!');
                         completed = true;
 
                         // Navigate to results
@@ -380,26 +353,19 @@ export default function StartPage() {
                             onClick={handleSubmit}
                             disabled={(!file && !url) || isSubmitting}
                             className={`
-                w-full h-16 rounded-xl font-medium text-lg transition-all duration-300
+                w-full h-16 rounded-xl font-medium text-lg transition-all duration-300 flex items-center justify-center gap-2
                 ${(!file && !url)
                                     ? 'bg-white/5 text-zinc-600 cursor-not-allowed'
-                                    : 'bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10'}
+                                    : isSubmitting
+                                        ? 'bg-white/90 text-black cursor-wait'
+                                        : 'bg-white text-black hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-white/10'}
               `}
                         >
                             {isSubmitting ? (
-                                <div className="flex flex-col items-center gap-2 w-full px-4">
-                                    <div className="flex items-center gap-2">
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                        {statusMessage || 'Processing...'}
-                                    </div>
-                                    {/* Progress bar */}
-                                    <div className="w-full h-1 bg-black/20 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-black transition-all duration-300"
-                                            style={{ width: `${progress}%` }}
-                                        />
-                                    </div>
-                                </div>
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Processing...
+                                </>
                             ) : (
                                 <>
                                     Continue to Chat <ArrowRight className="w-5 h-5" />

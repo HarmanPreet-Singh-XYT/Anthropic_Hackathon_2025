@@ -312,8 +312,8 @@ async def clear_resume():
 
 @app.post("/api/scout/start")
 async def start_scout_workflow(
-    scholarship_url: str = Form(...),
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    scholarship_url: str = Form(...)
 ):
     """
     Start Scout agent workflow in background
