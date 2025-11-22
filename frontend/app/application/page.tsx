@@ -6,6 +6,7 @@ import { Sparkles, FileDown, Loader2, CheckCircle, Copy } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import TiptapEditor from '@/components/Editor';
 
 // --- Types ---
 interface ApplicationData {
@@ -16,13 +17,19 @@ interface ApplicationData {
         weight: number;
     }>;
     strategy_note?: string;
+    full_resume_markdown?: string;
 }
+
+type TabType = 'essay' | 'improvements' | 'resume';
 
 export default function ApplicationPage() {
     const [applicationData, setApplicationData] = useState<ApplicationData | null>(null);
+    const [activeTab, setActiveTab] = useState<TabType>('essay');
     const [isExporting, setIsExporting] = useState(false);
     const [exportSuccess, setExportSuccess] = useState(false);
     const [copiedResume, setCopiedResume] = useState(false);
+    const [copiedEssay, setCopiedEssay] = useState(false);
+    const [resumeContent, setResumeContent] = useState('');
     const router = useRouter();
     const searchParams = useSearchParams();
     const session_id = searchParams.get('session');
@@ -30,7 +37,6 @@ export default function ApplicationPage() {
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-    // Load application data on mount
     useEffect(() => {
         if (!session_id) return;
 
@@ -40,18 +46,23 @@ export default function ApplicationPage() {
                 if (!response.ok) throw new Error("Failed to fetch data");
 
                 const data = await response.json();
+                console.log(data);
 
                 if (data.status === "complete" && data.result) {
-                    setApplicationData({
+                    const appData = {
                         essay: data.result.essay_draft,
                         resume_optimizations: data.result.resume_optimizations || [],
-                        strategy_note: data.result.strategy_note
-                    });
+                        strategy_note: data.result.strategy_note,
+                        full_resume_markdown: data.result.optimized_resume_markdown
+                    };
+                    setApplicationData(appData);
+                    // Initialize resume content
+                    if (appData.full_resume_markdown) {
+                        setResumeContent(appData.full_resume_markdown);
+                    }
                 } else if (data.status === "waiting_for_input") {
-                    // Interview required - redirect to AI-Help page
                     router.push(`/ai-help?session=${session_id}`);
                 } else if (data.status === "processing" || data.status === "processing_resume") {
-                    // Still processing, poll again
                     setTimeout(fetchData, 2000);
                 }
             } catch (e) {
@@ -62,13 +73,11 @@ export default function ApplicationPage() {
         fetchData();
     }, [session_id, router]);
 
-    // Export to PDF function
     const handleExportPDF = async () => {
         if (!contentRef.current) return;
 
         setIsExporting(true);
         try {
-            // Create canvas from the content
             const canvas = await html2canvas(contentRef.current, {
                 scale: 2,
                 backgroundColor: '#050505',
@@ -82,7 +91,7 @@ export default function ApplicationPage() {
                 format: 'a4'
             });
 
-            const imgWidth = 210; // A4 width in mm
+            const imgWidth = 210;
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
             pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
@@ -97,13 +106,25 @@ export default function ApplicationPage() {
         }
     };
 
-    // Copy Resume Function
     const handleCopyResume = () => {
         if (!applicationData?.resume_optimizations) return;
         const text = applicationData.resume_optimizations
             .map(opt => opt.optimized)
             .join('\n');
         navigator.clipboard.writeText(text);
+        setCopiedResume(true);
+        setTimeout(() => setCopiedResume(false), 2000);
+    };
+
+    const handleCopyEssay = () => {
+        if (!applicationData?.essay) return;
+        navigator.clipboard.writeText(applicationData.essay);
+        setCopiedEssay(true);
+        setTimeout(() => setCopiedEssay(false), 2000);
+    };
+
+    const handleCopyResumeMarkdown = () => {
+        navigator.clipboard.writeText(resumeContent);
         setCopiedResume(true);
         setTimeout(() => setCopiedResume(false), 2000);
     };
@@ -121,7 +142,6 @@ export default function ApplicationPage() {
 
     return (
         <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 relative">
-
             {/* Background Stars/Particles */}
             <div className="fixed inset-0 z-0 pointer-events-none">
                 {[...Array(30)].map((_, i) => (
@@ -148,15 +168,12 @@ export default function ApplicationPage() {
                         }}
                     />
                 ))}
-
-                {/* Subtle Glows */}
                 <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-purple-500/5 rounded-full blur-[150px]" />
                 <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[150px]" />
             </div>
 
             {/* Main Content */}
             <div className="relative z-10 max-w-6xl mx-auto px-6 py-12">
-
                 {/* Header */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
@@ -175,10 +192,8 @@ export default function ApplicationPage() {
                     </p>
                 </motion.div>
 
-                {/* Content Sections */}
+                {/* Combined Content Section */}
                 <div ref={contentRef} className="space-y-6 mb-8">
-
-                    {/* Essay Section */}
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -188,92 +203,161 @@ export default function ApplicationPage() {
                         {/* Inner Glow */}
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
 
-                        {/* Section Header */}
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-2 h-2 rounded-full bg-white" />
-                            <h2 className="text-xs font-bold tracking-widest text-white uppercase">Essay</h2>
-                        </div>
-
-                        {/* Essay Content */}
-                        <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl p-6 min-h-[300px]">
-                            {applicationData.essay ? (
-                                <div className="prose prose-invert max-w-none">
-                                    <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap font-light text-base">
-                                        {applicationData.essay}
-                                    </p>
-                                </div>
-                            ) : (
-                                <p className="text-zinc-500 italic">Your essay will appear here...</p>
-                            )}
-                        </div>
-
-                        {/* Strategy Note */}
-                        {applicationData.strategy_note && (
-                            <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                                <p className="text-xs text-blue-300/80 font-medium mb-1">Strategy Note</p>
-                                <p className="text-sm text-blue-200/60">{applicationData.strategy_note}</p>
-                            </div>
-                        )}
-                    </motion.div>
-
-                    {/* Resume Section */}
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.6, delay: 0.4 }}
-                        className="bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-[24px] p-8 shadow-2xl shadow-black/50 relative overflow-hidden"
-                    >
-                        {/* Inner Glow */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
-
-                        {/* Section Header */}
+                        {/* Header with Tabs on Right */}
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-2 rounded-full bg-white" />
-                                <h2 className="text-xs font-bold tracking-widest text-white uppercase">Resume Improvements</h2>
+                                <h2 className="text-xs font-bold tracking-widest text-white uppercase">
+                                    {activeTab === 'essay' ? 'Essay' : activeTab === 'improvements' ? 'Improvements' : 'Resume'}
+                                </h2>
                             </div>
-                            <button
-                                onClick={handleCopyResume}
-                                className="text-xs flex items-center gap-2 text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
-                            >
-                                {copiedResume ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                                {copiedResume ? "Copied All" : "Copy Optimized"}
-                            </button>
+
+                            {/* Tab Buttons - Right Aligned */}
+                            <div className="flex items-center gap-1 bg-[#0a0a0a]/80 border border-white/10 rounded-xl p-1">
+                                <button
+                                    onClick={() => setActiveTab('essay')}
+                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${
+                                        activeTab === 'essay'
+                                            ? 'bg-white text-black shadow-lg'
+                                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                    Essay
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('improvements')}
+                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${
+                                        activeTab === 'improvements'
+                                            ? 'bg-white text-black shadow-lg'
+                                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                    Improvements
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('resume')}
+                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${
+                                        activeTab === 'resume'
+                                            ? 'bg-white text-black shadow-lg'
+                                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                    Resume
+                                </button>
+                            </div>
                         </div>
 
-                        {/* Resume Content */}
-                        <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl p-6 min-h-[300px]">
-                            {applicationData.resume_optimizations && applicationData.resume_optimizations.length > 0 ? (
-                                <div className="space-y-6">
-                                    {applicationData.resume_optimizations.map((opt, index) => (
-                                        <div key={index} className="space-y-3">
-                                            {/* Original */}
-                                            <div>
-                                                <p className="text-xs text-zinc-500 mb-2">Original</p>
-                                                <p className="text-sm text-zinc-400 line-through opacity-60">{opt.original}</p>
-                                            </div>
+                        {/* Content Area */}
+                        <AnimatePresence mode="wait">
+                            {activeTab === 'essay' ? (
+                                <motion.div
+                                    key="essay"
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: 20 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl p-6 min-h-[400px] relative">
+                                        {/* Copy Button inside box */}
+                                        {<button
+                                            onClick={handleCopyEssay}
+                                            className="absolute top-4 right-4 text-xs flex items-center gap-2 text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10"
+                                        >
+                                            {copiedEssay ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                                            {copiedEssay ? "Copied" : "Copy"}
+                                        </button>}
 
-                                            {/* Optimized */}
-                                            <div>
-                                                <p className="text-xs text-green-400 mb-2 flex items-center gap-2">
-                                                    Optimized
-                                                    <span className="text-[10px] px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-full">
-                                                        Weight: {Math.round(opt.weight * 100)}%
-                                                    </span>
+                                        {applicationData.essay ? (
+                                            <div className="prose prose-invert max-w-none">
+                                                <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap font-light text-base">
+                                                    {applicationData.essay}
                                                 </p>
-                                                <p className="text-sm text-zinc-200">{opt.optimized}</p>
                                             </div>
+                                        ) : (
+                                            <p className="text-zinc-500 italic">Your essay will appear here...</p>
+                                        )}
+                                    </div>
 
-                                            {index < applicationData.resume_optimizations!.length - 1 && (
-                                                <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-                                            )}
+                                    {applicationData.strategy_note && (
+                                        <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                                            <p className="text-xs text-blue-300/80 font-medium mb-1">Strategy Note</p>
+                                            <p className="text-sm text-blue-200/60">{applicationData.strategy_note}</p>
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                </motion.div>
+                            ) : activeTab === 'improvements' ? (
+                                <motion.div
+                                    key="improvements"
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -20 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl p-6 min-h-[400px]">
+                                        {applicationData.resume_optimizations && applicationData.resume_optimizations.length > 0 ? (
+                                            <div className="space-y-6">
+                                                {applicationData.resume_optimizations.map((opt, index) => (
+                                                    <div key={index} className="space-y-3">
+                                                        <div>
+                                                            <p className="text-xs text-zinc-500 mb-2">Original</p>
+                                                            <p className="text-sm text-zinc-400 line-through opacity-60">{opt.original}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-green-400 mb-2 flex items-center gap-2">
+                                                                Optimized
+                                                                <span className="text-[10px] px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-full">
+                                                                    Weight: {Math.round(opt.weight * 100)}%
+                                                                </span>
+                                                            </p>
+                                                            <p className="text-sm text-zinc-200">{opt.optimized}</p>
+                                                        </div>
+                                                        {index < applicationData.resume_optimizations!.length - 1 && (
+                                                            <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-zinc-500 italic">Your resume improvements will appear here...</p>
+                                        )}
+                                    </div>
+                                </motion.div>
                             ) : (
-                                <p className="text-zinc-500 italic">Your resume will appear here...</p>
+                                <motion.div
+                                    key="resume"
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -20 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl overflow-hidden min-h-[500px] relative">
+                                        {/* Copy Button */}
+                                        {/* <button
+                                            onClick={handleCopyResumeMarkdown}
+                                            className="absolute top-4 right-4 z-10 text-xs flex items-center gap-2 text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10 bg-[#0a0a0a]/80 border border-white/10"
+                                        >
+                                            {copiedResume ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                                            {copiedResume ? "Copied" : "Copy"}
+                                        </button> */}
+
+                                        {resumeContent ? (
+                                            <div className="h-[500px]">
+                                                <TiptapEditor
+                                                    initialMarkdown={resumeContent}
+                                                    onChange={(newMarkdown) => {
+                                                        setResumeContent(newMarkdown);
+                                                    }}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-center h-[500px]">
+                                                <p className="text-zinc-500 italic">Your resume will appear here...</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
                             )}
-                        </div>
+                        </AnimatePresence>
                     </motion.div>
                 </div>
 
@@ -289,9 +373,7 @@ export default function ApplicationPage() {
                         disabled={isExporting}
                         className="group relative h-14 px-8 rounded-xl font-medium text-base flex items-center justify-center gap-3 bg-white text-black hover:bg-zinc-100 disabled:bg-zinc-700 disabled:text-zinc-400 hover:scale-[1.02] active:scale-[0.98] shadow-2xl shadow-white/20 transition-all duration-300 overflow-hidden"
                     >
-                        {/* Animated background gradient */}
                         <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
                         <span className="relative z-10 flex items-center gap-3">
                             {isExporting ? (
                                 <>

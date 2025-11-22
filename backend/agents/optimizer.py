@@ -18,70 +18,23 @@ class OptimizerAgent:
     """
 
     def __init__(self, llm_client: LLMClient):
+        """
+        Initialize Optimizer Agent
+
+        Args:
+            llm_client: Configured LLMClient instance
+        """
         self.llm_client = llm_client
         self.system_prompt = self._load_prompt()
 
     def _load_prompt(self) -> str:
-        return "optimizer"
-
-    def _extract_bullets_from_resume(self, resume_text: str) -> List[str]:
         """
-        Extract individual bullet points/experiences from resume text
-        
+        Load optimizer system prompt from prompts/optimizer.md
+
         Returns:
-            List of achievement bullets
+            System prompt text template
         """
-        bullets = []
-        
-        # Method 1: Explicit bullet points
-        bullet_chars = ['-', '*', '•', '▪', '‣', '⁃']
-        
-        for line in resume_text.split('\n'):
-            line = line.strip()
-            if not line or len(line) < 20:  # Skip empty or very short lines
-                continue
-            
-                        # Check if line starts with bullet character
-            if any(line.startswith(char) for char in bullet_chars):
-                bullet_text = line.lstrip(''.join(bullet_chars)).strip()
-                if bullet_text:
-                    bullets.append(bullet_text)
-            # Or if line contains action verbs (likely an achievement)
-            elif any(verb in line.lower() for verb in [
-                'led', 'managed', 'developed', 'created', 'increased', 'improved',
-                'designed', 'implemented', 'organized', 'founded', 'built',
-                'achieved', 'delivered', 'coordinated', 'launched', 'established'
-            ]):
-                bullets.append(line)
-        
-        # If we found very few bullets, try a more aggressive extraction
-        if len(bullets) < 3:
-            print(f"  [Optimizer] Only found {len(bullets)} bullets, trying alternative extraction...")
-            bullets = self._extract_bullets_aggressive(resume_text)
-        
-        print(f"  [Optimizer] Extracted {len(bullets)} bullet points from resume")
-        return bullets
-
-    def _extract_bullets_aggressive(self, resume_text: str) -> List[str]:
-        """Fallback: Extract any substantial sentence that looks like an achievement"""
-        bullets = []
-        
-        for line in resume_text.split('\n'):
-            line = line.strip()
-            # Skip headers (usually short or start with #)
-            if len(line) < 30 or line.startswith('#'):
-                continue
-            # Skip lines that look like contact info or dates
-            if any(pattern in line.lower() for pattern in ['@', 'phone', 'email', 'linkedin']):
-                continue
-            if line.count('/') >= 2 or line.count('-') >= 2:  # Likely a date range
-                continue
-            
-            # Keep lines that look like descriptions
-            if len(line) > 30 and any(c.isalpha() for c in line):
-                bullets.append(line)
-        
-        return bullets[:15]  # Limit to 15 most substantial lines
+        return "optimizer"
 
     async def optimize_bullets(
         self,
@@ -90,15 +43,26 @@ class OptimizerAgent:
         weighted_priorities: Dict[str, float],
         tone: str
     ) -> List[Dict[str, Any]]:
-        """Generate optimized resume bullets"""
+        """
+        Generate optimized resume bullets
+
+        Args:
+            student_experiences: Relevant resume sections or text
+            scholarship_values: List of primary values
+            weighted_priorities: Dict of value weights
+            tone: Desired tone description
+
+        Returns:
+            List of optimized bullet objects
+        """
         print("  → Optimizer rewriting bullets...")
-        print(f"  → Input length: {len(student_experiences)} chars")
-        print(f"  → Scholarship values: {scholarship_values}")
 
         try:
+            # Format weights for prompt
             weights_str = ", ".join([f"{k}: {v:.2f}" for k, v in weighted_priorities.items()])
             values_str = ", ".join(scholarship_values)
 
+            # Load and populate the prompt
             full_prompt = load_prompt(
                 self.system_prompt, 
                 {
@@ -109,21 +73,18 @@ class OptimizerAgent:
                 }
             )
             
-            system_instruction = """You are a resume expert. 
-You MUST return ONLY a valid JSON array of objects with no markdown fences.
-Each object must have: original, optimized, rationale, priority.
-Output the raw JSON array directly."""
+            # Call LLM
+            system_instruction = "You are a resume expert. Output valid JSON array only."
             
             response_text = await self.llm_client.call(
                 system_prompt=system_instruction,
                 user_message=full_prompt
             )
 
+            # Parse JSON
             cleaned_response = response_text.strip()
             if cleaned_response.startswith("```json"):
                 cleaned_response = cleaned_response[7:]
-            elif cleaned_response.startswith("```"):
-                cleaned_response = cleaned_response[3:]
             if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
             
@@ -138,86 +99,105 @@ Output the raw JSON array directly."""
             traceback.print_exc()
             return []
 
-    async def generate_full_resume(
+    async def generate_full_optimized_resume(
         self,
         original_resume: str,
-        optimizations: List[Dict[str, Any]],
         scholarship_values: List[str],
-        tone: str
+        weighted_priorities: Dict[str, float],
+        tone: str,
+        optimizations: List[Dict[str, Any]]
     ) -> str:
-        """Generate a complete rewritten resume in markdown format"""
-        print("  → Generating full optimized resume...")
+        """
+        Generate a complete optimized resume in Markdown format using LLM
+
+        Args:
+            original_resume: Original resume text
+            scholarship_values: List of primary values
+            weighted_priorities: Dict of value weights
+            tone: Desired tone
+            optimizations: List of bullet optimizations for reference
+
+        Returns:
+            Complete optimized resume in Markdown format
+        """
+        print("  → Generating full optimized resume via LLM...")
 
         try:
-            opt_summary = "\n".join([
-                f"- Original: {o.get('original', '')}\n  Improved: {o.get('optimized', o.get('improved', ''))}"
-                for o in optimizations
+            # Format the optimizations for context
+            optimizations_text = "\n".join([
+                f"- Original: {opt.get('original', '')}\n  Optimized: {opt.get('improved', opt.get('optimized', ''))}"
+                for opt in optimizations[:10]  # Limit to first 10 for context
             ])
 
-            prompt = f"""Based on the following original resume and optimizations, generate a complete, 
-professionally formatted resume in Markdown.
+            weights_str = ", ".join([f"{k}: {v:.2f}" for k, v in weighted_priorities.items()])
+            values_str = ", ".join(scholarship_values)
 
-ORIGINAL RESUME:
-{original_resume[:3000]}
+            prompt = f"""You are an expert resume writer. Generate a complete, professionally formatted resume in Markdown that incorporates the optimized content below while maintaining the original resume's structure and information.
 
-OPTIMIZATIONS MADE:
-{opt_summary}
+**Original Resume:**
+{original_resume}
 
-SCHOLARSHIP VALUES TO EMPHASIZE:
-{', '.join(scholarship_values)}
+**Scholarship Values to Emphasize:**
+{values_str}
 
-DESIRED TONE: {tone}
+**Priority Weights:**
+{weights_str}
 
-Instructions:
-1. Incorporate all the optimized bullets into the appropriate sections
-2. Ensure consistent formatting throughout
-3. Use proper Markdown structure (headers, bullet points, bold for emphasis)
-4. Maintain professional resume conventions
-5. Keep sections organized: Contact Info, Summary/Objective, Experience, Education, Skills, etc.
-6. Ensure the resume flows naturally and tells a cohesive story
-7. Keep the student's original structure but enhance the content
+**Tone:**
+{tone}
 
-Output the complete resume in Markdown format only, no additional commentary.
-NO code fences, just raw markdown."""
+**Sample Optimizations (for reference):**
+{optimizations_text}
 
-            response = await self.llm_client.call(
-                system_prompt="You are an expert resume writer. Output clean Markdown only, no code fences.",
+**Instructions:**
+1. Maintain the EXACT structure of the original resume (sections, headers, formatting)
+2. Keep ALL contact information, education details, dates, company names exactly as they appear
+3. Incorporate the optimized bullet points while preserving the resume's professional format
+4. Use proper Markdown formatting:
+   - Use # for name/title
+   - Use ## for section headers (Experience, Education, Skills, etc.)
+   - Use ### for job titles/positions
+   - Use - for bullet points
+   - Use *italic* for dates or emphasis
+   - Maintain proper spacing and structure
+5. Ensure the resume highlights the scholarship values: {values_str}
+6. Keep the tone {tone}
+
+**OUTPUT ONLY THE COMPLETE MARKDOWN RESUME - NO EXPLANATIONS OR EXTRA TEXT**
+"""
+
+            system_instruction = "You are an expert resume writer. Output only the complete Markdown-formatted resume with no additional commentary."
+            
+            response_text = await self.llm_client.call(
+                system_prompt=system_instruction,
                 user_message=prompt
             )
 
-            cleaned = response.strip()
-            if cleaned.startswith("```markdown"):
-                cleaned = cleaned[11:]
-            elif cleaned.startswith("```md"):
-                cleaned = cleaned[5:]
-            elif cleaned.startswith("```"):
-                cleaned = cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-
-            cleaned = cleaned.strip()
+            # Clean up the response
+            cleaned_response = response_text.strip()
             
-            # Validate markdown structure
-            if not cleaned:
-                print("  ⚠ Empty markdown generated, using original resume")
+            # Remove markdown code blocks if present
+            if cleaned_response.startswith("```markdown"):
+                cleaned_response = cleaned_response[11:]
+            elif cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            
+            cleaned_response = cleaned_response.strip()
+            
+            print(f"  ✓ Generated full optimized resume ({len(cleaned_response)} characters)")
+            
+            # Validate that we got actual content
+            if len(cleaned_response) < 100:
+                print("  ⚠ Generated resume seems too short, using original")
                 return original_resume
             
-            # Check for basic markdown headers
-            has_headers = any(line.startswith('#') for line in cleaned.split('\n'))
-            if not has_headers:
-                print("  ⚠ No markdown headers found, adding structure...")
-                cleaned = f"# Resume\n\n{cleaned}"
-            
-            # Check minimum length
-            if len(cleaned) < 200:
-                print(f"  ⚠ Markdown too short ({len(cleaned)} chars), using original")
-                return original_resume
-
-            print(f"  ✓ Full resume generated ({len(cleaned)} chars, {cleaned.count('#')} sections)")
-            return cleaned
+            return cleaned_response
 
         except Exception as e:
-            print(f"  ⚠ Full resume generation failed: {e}")
+            print(f"  ⚠ Failed to generate full resume: {e}")
             import traceback
             traceback.print_exc()
             return original_resume
@@ -230,74 +210,69 @@ NO code fences, just raw markdown."""
         """
         Execute Optimizer Agent workflow
 
+        Args:
+            resume_text: Student's resume text
+            decoder_output: Scholarship analysis from Decoder
+
         Returns:
             Dict containing:
                 - optimizations: List of before/after bullets with rationale
-                - full_resume_markdown: Complete rewritten resume in markdown
+                - optimized_resume_markdown: Complete optimized resume in Markdown format
         """
         print("\n🔧 Optimizer Agent Running...")
-        print(f"  → Resume text length: {len(resume_text)} chars")
+        print(f"  → Resume text length: {len(resume_text)} characters")
 
-        # Validate inputs
-        if not resume_text or len(resume_text) < 100:
-            print(f"  ⚠ ERROR: Resume text is empty or too short ({len(resume_text)} chars)")
-            return {
-                "optimizations": [],
-                "full_resume_markdown": ""
-            }
-
+        # Extract values from decoder output
         primary_values = decoder_output.get("primary_values", [])
         hidden_weights = decoder_output.get("hidden_weights", {})
         tone = decoder_output.get("tone", "Professional")
 
-        print(f"  → Primary values: {primary_values}")
-        print(f"  → Hidden weights: {list(hidden_weights.keys())}")
-        print(f"  → Tone: {tone}")
-
-        # Extract structured bullet points
-        print("  → Extracting resume bullets...")
-        resume_bullets = self._extract_bullets_from_resume(resume_text)
-        
-        if not resume_bullets:
-            print("  ⚠ WARNING: No bullets extracted from resume")
-            structured_experiences = resume_text
-        else:
-            structured_experiences = "\n".join([f"- {bullet}" for bullet in resume_bullets])
-            print(f"  → Structured {len(resume_bullets)} bullets")
-
-        # Generate optimizations
+        # Step 1: Generate optimized bullets
         raw_optimizations = await self.optimize_bullets(
-            student_experiences=structured_experiences,
+            student_experiences=resume_text,
             scholarship_values=primary_values,
             weighted_priorities=hidden_weights,
             tone=tone
         )
 
-        # Format optimizations
-        priority_weight_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
+        print(f"  → Received {len(raw_optimizations)} raw optimizations")
+
+        # Transform to frontend format: {original, optimized, weight}
         formatted_optimizations = []
-        
         for opt in raw_optimizations:
+            # Map priority to weight value
+            priority_weight_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
             weight = priority_weight_map.get(opt.get("priority", "medium"), 0.6)
+
             formatted_optimizations.append({
                 "original": opt.get("original", ""),
                 "optimized": opt.get("improved", opt.get("optimized", "")),
-                "rationale": opt.get("rationale", ""),
                 "weight": weight
             })
 
-        # Generate the full rewritten resume in markdown
-        full_resume_md = await self.generate_full_resume(
+        # Step 2: Generate complete optimized resume in Markdown using LLM
+        optimized_resume_markdown = await self.generate_full_optimized_resume(
             original_resume=resume_text,
-            optimizations=formatted_optimizations,
             scholarship_values=primary_values,
-            tone=tone
+            weighted_priorities=hidden_weights,
+            tone=tone,
+            optimizations=raw_optimizations
         )
 
         print(f"  ✓ Optimizer complete: {len(formatted_optimizations)} bullets optimized")
-        print(f"  ✓ Full resume markdown: {len(full_resume_md)} chars")
+        print(f"  ✓ Generated resume length: {len(optimized_resume_markdown)} characters")
         
+        # Preview the generated resume
+        print("\n" + "="*80)
+        print("OPTIMIZED RESUME PREVIEW:")
+        print("="*80)
+        preview_lines = optimized_resume_markdown.split('\n')[:20]
+        print('\n'.join(preview_lines))
+        if len(optimized_resume_markdown.split('\n')) > 20:
+            print("...")
+        print("="*80 + "\n")
+
         return {
             "optimizations": formatted_optimizations,
-            "full_resume_markdown": full_resume_md
+            "optimized_resume_markdown": optimized_resume_markdown
         }
