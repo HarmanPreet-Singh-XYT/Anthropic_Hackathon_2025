@@ -4,11 +4,12 @@ Handles resume upload, processing, and ChromaDB integration
 """
 
 import os
+from datetime import datetime
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, status
+from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -69,6 +70,9 @@ vector_store: Optional[VectorStore] = None
 
 # Uploads directory
 UPLOADS_DIR = Path(__file__).parent / "uploads"
+
+# Session storage for Scout workflows (in-memory)
+workflow_sessions: Dict[str, Dict[str, Any]] = {}
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 
@@ -302,6 +306,90 @@ async def clear_resume():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error clearing resume data: {str(e)}"
         )
+
+
+# ==================== Scout Workflow Endpoints ====================
+
+@app.post("/api/scout/start")
+async def start_scout_workflow(
+    scholarship_url: str = Form(...),
+    background_tasks: BackgroundTasks
+):
+    """
+    Start Scout agent workflow in background
+    
+    Args:
+        scholarship_url: URL of scholarship to analyze
+        
+    Returns:
+        session_id for polling status
+    """
+    from agents.scout import ScoutAgent
+    
+    # Generate unique session ID
+    session_id = str(uuid.uuid4())
+    
+    # Initialize session
+    workflow_sessions[session_id] = {
+        "session_id": session_id,
+        "status": "processing",
+        "created_at": datetime.utcnow().isoformat(),
+        "scholarship_url": scholarship_url,
+        "result": None,
+        "error": None
+    }
+    
+    # Background task to run Scout
+    async def run_scout_background():
+        try:
+            print(f"[Scout Background Task] Starting for session {session_id}")
+            scout = ScoutAgent()
+            result = await scout.run(scholarship_url, debug=False)
+            
+            workflow_sessions[session_id]["status"] = "complete"
+            workflow_sessions[session_id]["result"] = result
+            print(f"[Scout Background Task] Completed for session {session_id}")
+            
+        except Exception as e:
+            print(f"[Scout Background Task] Error for session {session_id}: {e}")
+            workflow_sessions[session_id]["status"] = "error"
+            workflow_sessions[session_id]["error"] = str(e)
+    
+    # Add background task
+    background_tasks.add_task(run_scout_background)
+    
+    return {
+        "session_id": session_id,
+        "status": "processing",
+        "message": "Scout workflow started"
+    }
+
+
+@app.get("/api/scout/status/{session_id}")
+async def get_scout_status(session_id: str):
+    """
+    Check Scout workflow status
+    
+    Args:
+        session_id: Session ID from start_scout_workflow
+        
+    Returns:
+        Current status and results (if complete)
+    """
+    if session_id not in workflow_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+    
+    session = workflow_sessions[session_id]
+    
+    return {
+        "session_id": session_id,
+        "status": session["status"],
+        "result": session.get("result"),
+        "error": session.get("error")
+    }
 
 
 # ==================== Error Handlers ====================
