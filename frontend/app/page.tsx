@@ -1,9 +1,9 @@
 "use client"
 import React, { useState, useEffect } from 'react';
-import { 
-  Moon, Sun, Brain, PenTool, Target, Zap, 
-  CheckCircle, ArrowRight, Github, Play, Layers, 
-  UploadCloud, FileText, Sparkles, User, 
+import {
+  Moon, Sun, Brain, PenTool, Target, Zap,
+  CheckCircle, ArrowRight, Github, Play, Layers,
+  UploadCloud, FileText, Sparkles, User,
   BarChart3, RefreshCw, GraduationCap,
   ShieldCheck,
   Check
@@ -26,7 +26,7 @@ const App = () => {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-blue-500 selection:text-white ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
-      
+
       {/* BACKGROUND GRID ANIMATION */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className={`absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] ${darkMode ? 'opacity-20' : 'opacity-100'}`}></div>
@@ -44,16 +44,17 @@ const App = () => {
               </div>
               <span className="font-bold text-xl tracking-tight">Scholar<span className="text-blue-600 dark:text-blue-400">Match</span></span>
             </div>
-            
+
             <div className="hidden md:flex items-center space-x-8 font-medium text-sm">
               <a href="#how-it-works" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Process</a>
               <a href="/start" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Live Demo</a>
+              <a href="/outreach" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Outreach</a>
               <a href="#features" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Features</a>
             </div>
 
             <div className="flex items-center gap-4">
-              <button 
-                onClick={toggleTheme} 
+              <button
+                onClick={toggleTheme}
                 className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
               >
                 {darkMode ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
@@ -69,7 +70,7 @@ const App = () => {
       {/* HERO SECTION */}
       <section className="relative pt-16 pb-16 lg:pt-32 lg:pb-24 overflow-hidden">
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center text-center">
-          
+
           {/* Badge */}
           <div className="animate-fade-in-up inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-slate-200 dark:border-slate-800 text-sm font-semibold mb-8 shadow-sm hover:shadow-md transition-shadow cursor-default">
             <span className="relative flex h-2 w-2">
@@ -83,7 +84,7 @@ const App = () => {
 
           {/* Headline */}
           <h1 className="animate-fade-in-up text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 leading-[1.1]">
-            Don't just apply. <br className="hidden md:block"/>
+            Don't just apply. <br className="hidden md:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 animate-gradient-x">
               Command the Room.
             </span>
@@ -92,7 +93,7 @@ const App = () => {
           <p className="animate-fade-in-up delay-100 mt-0 max-w-2xl mx-auto text-xl text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
             The first AI that decodes scholarship "personalities." We adapt your story to match the hidden values of any committee, instantly.
           </p>
-          
+
           {/* CTA Buttons */}
           <div className="animate-fade-in-up delay-200 mt-10 flex flex-col sm:flex-row gap-4 w-full justify-center">
             <a href='/start' className="group relative flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]">
@@ -121,23 +122,23 @@ const App = () => {
 
               {/* Interactive Area */}
               <div className="grid md:grid-cols-12 min-h-[500px]">
-                
+
                 {/* Sidebar Navigation */}
                 <div className="md:col-span-3 border-r border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50">
                   <div className="space-y-2">
-                    <button 
+                    <button
                       onClick={() => setActiveTab('input')}
                       className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'input' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'}`}
                     >
                       <User className="w-4 h-4" /> Profile & Link
                     </button>
-                    <button 
+                    <button
                       onClick={() => setActiveTab('analysis')}
                       className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'analysis' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'}`}
                     >
                       <Brain className="w-4 h-4" /> AI Analysis
                     </button>
-                    <button 
+                    <button
                       onClick={() => setActiveTab('draft')}
                       className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'draft' ? 'bg-green-600 text-white shadow-lg shadow-green-500/30' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'}`}
                     >
@@ -159,14 +160,14 @@ const App = () => {
 
                 {/* Main Content Area - Dynamic based on Tab */}
                 <div className="md:col-span-9 p-8 bg-white dark:bg-slate-950 relative">
-                  
+
                   {activeTab === 'input' && (
                     <div className="animate-fade-in space-y-6">
                       <div className="flex items-center justify-between">
                         <h3 className="text-xl font-bold">Scholarship Target</h3>
                         <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-slate-500">Step 1 of 3</span>
                       </div>
-                      
+
                       <div className="space-y-4">
                         <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors cursor-pointer group">
                           <div className="w-12 h-12 bg-blue-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -216,7 +217,7 @@ const App = () => {
                       </div>
 
                       <div className="flex justify-end mt-4">
-                         <button onClick={() => setActiveTab('draft')} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20">Generate Draft &rarr;</button>
+                        <button onClick={() => setActiveTab('draft')} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20">Generate Draft &rarr;</button>
                       </div>
                     </div>
                   )}
@@ -231,7 +232,7 @@ const App = () => {
                           <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs font-bold rounded">Optimized</span>
                         </div>
                       </div>
-                      
+
                       <div className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 font-serif leading-relaxed text-slate-700 dark:text-slate-300 text-sm overflow-y-auto max-h-[300px] shadow-inner">
                         <p className="mb-4">
                           <span className="bg-yellow-200 dark:bg-yellow-900/50 text-slate-900 dark:text-white px-1 rounded">Innovation isn't about the awards on a shelf; it's about the prototypes in the trash bin.</span> That is a lesson I learned not in the classroom, but at 2 AM in the robotics lab...
@@ -257,19 +258,19 @@ const App = () => {
         <p className="text-center text-xs font-bold uppercase tracking-widest text-slate-400 mb-6">Optimized for opportunities at</p>
         <div className="flex gap-16 animate-marquee whitespace-nowrap opacity-60 grayscale hover:grayscale-0 transition-all duration-500 justify-center">
           {['Stanford University', 'MIT Media Lab', 'Rhodes Trust', 'Gates Foundation', 'National Science Foundation', 'Fulbright Program'].map((org, i) => (
-             <div key={i} className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-200">
-               <GraduationCap className="w-6 h-6" /> {org}
-             </div>
+            <div key={i} className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-200">
+              <GraduationCap className="w-6 h-6" /> {org}
+            </div>
           ))}
         </div>
       </section>
 
-            {/* REFINED: HOW IT WORKS (The Processing Pipeline) */}
+      {/* REFINED: HOW IT WORKS (The Processing Pipeline) */}
       <section id="how-it-works" className="py-24 bg-slate-50 dark:bg-slate-900/50 relative overflow-hidden">
-        
+
         {/* Background Elements */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-full bg-gradient-to-b from-transparent via-blue-200 dark:via-blue-900/50 to-transparent hidden md:block"></div>
-        
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center mb-20">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">From Resume to <span className="text-blue-600 dark:text-blue-400">Winner</span></h2>
@@ -279,7 +280,7 @@ const App = () => {
           </div>
 
           <div className="space-y-12 relative">
-            
+
             {/* STAGE 1: INGESTION */}
             <div className="flex flex-col md:flex-row items-center gap-8 relative">
               {/* Number/Icon Node */}
@@ -308,10 +309,10 @@ const App = () => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Center Dot */}
               <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-blue-600 rounded-full border-4 border-white dark:border-slate-900 z-20 hidden md:block shadow-[0_0_15px_rgba(37,99,235,0.5)]"></div>
-              
+
               <div className="md:w-1/2 order-1 md:order-2 md:pl-12 hidden md:block">
                 <span className="text-6xl font-black text-slate-200 dark:text-slate-800 select-none">01</span>
               </div>
@@ -339,8 +340,8 @@ const App = () => {
                   <p className="text-slate-600 dark:text-slate-400 text-sm mb-4 leading-relaxed">
                     Our "Adaptive Weighting" engine compares your history against the scholarship's hidden values using vector embeddings.
                   </p>
-                  
-                   {/* Visualization of processing */}
+
+                  {/* Visualization of processing */}
                   <div className="flex gap-1 h-1.5 w-full mb-2">
                     <div className="h-full w-1/3 bg-purple-400 rounded-full animate-pulse"></div>
                     <div className="h-full w-1/3 bg-purple-300 rounded-full animate-pulse delay-75"></div>
@@ -365,15 +366,15 @@ const App = () => {
                   <p className="text-slate-600 dark:text-slate-400 text-sm mb-4 leading-relaxed">
                     The LLM generates a unique essay that emphasizes the traits this specific committee cares about most.
                   </p>
-                  
+
                   {/* Mock File Output */}
                   <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
                     <FileText className="w-8 h-8 text-slate-400" />
                     <div>
                       <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Final_Draft_v1.docx</p>
                       <div className="flex items-center gap-2">
-                         <span className="text-[10px] text-slate-400">Match Score: 98%</span>
-                         <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                        <span className="text-[10px] text-slate-400">Match Score: 98%</span>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
                       </div>
                     </div>
                   </div>
@@ -392,7 +393,7 @@ const App = () => {
         </div>
       </section>
 
-            {/* NEW: BENTO GRID FEATURES SECTION (Updated) */}
+      {/* NEW: BENTO GRID FEATURES SECTION (Updated) */}
       <section id="features" className="py-24 bg-slate-50 dark:bg-slate-900/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -403,7 +404,7 @@ const App = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[300px]">
-            
+
             {/* Feature 1: Large Card (Adaptive Scoring) */}
             <div className="md:col-span-2 row-span-1 bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -421,10 +422,10 @@ const App = () => {
                 </div>
                 {/* Visual Graph */}
                 <div className="flex items-end gap-2 h-24 mt-4 opacity-80">
-                   <div className="w-1/4 bg-blue-200 dark:bg-blue-900 rounded-t-lg h-[40%] group-hover:h-[60%] transition-all duration-500"></div>
-                   <div className="w-1/4 bg-blue-300 dark:bg-blue-800 rounded-t-lg h-[70%] group-hover:h-[40%] transition-all duration-500"></div>
-                   <div className="w-1/4 bg-blue-400 dark:bg-blue-700 rounded-t-lg h-[50%] group-hover:h-[80%] transition-all duration-500"></div>
-                   <div className="w-1/4 bg-blue-500 dark:bg-blue-600 rounded-t-lg h-[90%] group-hover:h-[50%] transition-all duration-500"></div>
+                  <div className="w-1/4 bg-blue-200 dark:bg-blue-900 rounded-t-lg h-[40%] group-hover:h-[60%] transition-all duration-500"></div>
+                  <div className="w-1/4 bg-blue-300 dark:bg-blue-800 rounded-t-lg h-[70%] group-hover:h-[40%] transition-all duration-500"></div>
+                  <div className="w-1/4 bg-blue-400 dark:bg-blue-700 rounded-t-lg h-[50%] group-hover:h-[80%] transition-all duration-500"></div>
+                  <div className="w-1/4 bg-blue-500 dark:bg-blue-600 rounded-t-lg h-[90%] group-hover:h-[50%] transition-all duration-500"></div>
                 </div>
               </div>
             </div>
@@ -440,7 +441,7 @@ const App = () => {
                 <p className="text-slate-300 text-sm mb-8">
                   Analyzes the "About Us" page of the donor to replicate their specific vocabulary and emotional resonance.
                 </p>
-                
+
                 {/* Chat Bubble Visual */}
                 <div className="space-y-4 font-mono text-xs">
                   <div className="bg-slate-800 p-3 rounded-lg rounded-tl-none border border-slate-700">
@@ -509,7 +510,7 @@ const App = () => {
         </div>
       </section>
 
-            {/* NEW: REAL WORLD EXAMPLES SECTION */}
+      {/* NEW: REAL WORLD EXAMPLES SECTION */}
       <section className="py-24 bg-white dark:bg-slate-900 border-y border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -521,11 +522,11 @@ const App = () => {
           </div>
 
           <div className="grid lg:grid-cols-2 gap-8">
-            
+
             {/* Case A: Leadership Focus */}
             <div className="group bg-slate-50 dark:bg-slate-950 rounded-2xl p-8 border border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 transition-colors relative overflow-hidden">
               <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">Target: Community Leadership</div>
-              
+
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
                   <User className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -540,7 +541,7 @@ const App = () => {
                 <span className="absolute -top-3 -left-2 text-4xl text-slate-200 dark:text-slate-700">"</span>
                 "Managing a weekly D&D group taught me <span className="bg-blue-100 dark:bg-blue-900/50 font-bold text-blue-700 dark:text-blue-300 px-1 rounded">conflict resolution</span> and the art of <span className="bg-blue-100 dark:bg-blue-900/50 font-bold text-blue-700 dark:text-blue-300 px-1 rounded">facilitating diverse groups</span> towards a shared goal..."
               </div>
-              
+
               <div className="mt-4 flex gap-2">
                 <span className="text-xs border border-blue-200 dark:border-blue-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">Soft Skills</span>
                 <span className="text-xs border border-blue-200 dark:border-blue-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">Community</span>
@@ -550,7 +551,7 @@ const App = () => {
             {/* Case B: Creative Focus */}
             <div className="group bg-slate-50 dark:bg-slate-950 rounded-2xl p-8 border border-slate-200 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 transition-colors relative overflow-hidden">
               <div className="absolute top-0 right-0 bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">Target: Arts & Innovation</div>
-              
+
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
                   <PenTool className="w-6 h-6 text-purple-600 dark:text-purple-400" />
@@ -576,11 +577,11 @@ const App = () => {
         </div>
       </section>
 
-            {/* NEW: TECH STACK / UNDER THE HOOD */}
+      {/* NEW: TECH STACK / UNDER THE HOOD */}
       <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
         {/* Background circuit pattern */}
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#4b5563_1px,transparent_1px)] [background-size:16px_16px]"></div>
-        
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
             <div>
@@ -597,7 +598,7 @@ const App = () => {
 
           {/* Tech Grid */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            
+
             {/* Step 1: Ingest */}
             <div className="bg-slate-800/50 backdrop-blur border border-slate-700 p-6 rounded-xl">
               <div className="text-blue-500 mb-4 font-mono text-xs font-bold tracking-widest">01 INGESTION</div>
@@ -616,7 +617,7 @@ const App = () => {
               </p>
             </div>
 
-             {/* Step 3: LLM Logic */}
+            {/* Step 3: LLM Logic */}
             <div className="bg-slate-800/50 backdrop-blur border border-slate-700 p-6 rounded-xl relative group">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
               <div className="text-green-500 mb-4 font-mono text-xs font-bold tracking-widest relative">03 REASONING</div>
@@ -626,7 +627,7 @@ const App = () => {
               </p>
             </div>
 
-             {/* Step 4: Output */}
+            {/* Step 4: Output */}
             <div className="bg-slate-800/50 backdrop-blur border border-slate-700 p-6 rounded-xl">
               <div className="text-yellow-500 mb-4 font-mono text-xs font-bold tracking-widest">04 GENERATION</div>
               <h3 className="font-bold text-lg mb-2">Refined Drafting</h3>
@@ -638,7 +639,7 @@ const App = () => {
         </div>
       </section>
 
-            {/* NEW: IMPACT STATS */}
+      {/* NEW: IMPACT STATS */}
       <section className="py-20 bg-blue-600 dark:bg-blue-700 relative overflow-hidden">
         {/* Decorative Circles */}
         <div className="absolute top-0 left-0 w-64 h-64 bg-white opacity-5 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
@@ -662,11 +663,11 @@ const App = () => {
         </div>
       </section>
 
-            {/* NEW: ETHICS & SAFETY */}
+      {/* NEW: ETHICS & SAFETY */}
       <section className="py-24 bg-slate-50 dark:bg-slate-900/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col lg:flex-row items-center gap-16">
-            
+
             {/* Left Content */}
             <div className="lg:w-1/2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-bold uppercase tracking-wide mb-6">
@@ -676,7 +677,7 @@ const App = () => {
               <p className="text-lg text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
                 ScholarMatch isn't a "cheat code"—it's a translation layer. We don't invent stories for you; we help you articulate your own experiences in a way that committees understand.
               </p>
-              
+
               <div className="space-y-4">
                 <div className="flex gap-4">
                   <div className="mt-1 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center shrink-0">
@@ -717,7 +718,7 @@ const App = () => {
                   <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div className="h-full w-[90%] bg-slate-300 dark:bg-slate-700 rounded-full"></div>
                   </div>
-                  
+
                   {/* Floating Badge */}
                   <div className="absolute -bottom-6 -right-6 bg-white dark:bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 flex items-center gap-3 animate-bounce">
                     <ShieldCheck className="w-8 h-8 text-green-500" />
@@ -748,30 +749,30 @@ const App = () => {
             {/* Central Connector Line */}
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300 dark:bg-slate-700 hidden md:block"></div>
             <div className="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 hidden md:flex w-12 h-12 bg-white dark:bg-slate-900 rounded-full border-4 border-purple-500 items-center justify-center">
-               <ArrowRight className="w-6 h-6 text-purple-500" />
+              <ArrowRight className="w-6 h-6 text-purple-500" />
             </div>
 
             <div className="grid md:grid-cols-2 gap-12 md:gap-24 items-center">
-              
+
               {/* Left Side: What the Student Sees (The Problem) */}
               <div className="relative group opacity-70 hover:opacity-100 transition-opacity blur-[0.5px] hover:blur-0 duration-500">
                 <div className="absolute -top-10 left-0 text-xs font-bold uppercase tracking-widest text-slate-400">Human View</div>
                 <div className="bg-white dark:bg-slate-950 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
-                   {/* Ribbon */}
-                   <div className="absolute top-0 right-0 bg-slate-200 dark:bg-slate-800 text-slate-500 text-xs px-3 py-1 rounded-bl-lg font-bold">
+                  {/* Ribbon */}
+                  <div className="absolute top-0 right-0 bg-slate-200 dark:bg-slate-800 text-slate-500 text-xs px-3 py-1 rounded-bl-lg font-bold">
                     Generic Description
-                   </div>
-                   
-                   <h3 className="font-serif text-xl font-bold mb-4 text-slate-800 dark:text-slate-200">The 2025 Future Leader Grant</h3>
-                   <div className="space-y-3 text-sm text-slate-500 font-serif leading-relaxed">
-                     <p>We are looking for <span className="bg-slate-200 dark:bg-slate-800">exceptional students</span> who demonstrate <span className="bg-slate-200 dark:bg-slate-800">strong leadership</span> and a commitment to <span className="bg-slate-200 dark:bg-slate-800">academic excellence</span>.</p>
-                     <p>Applicants should submit a 500-word essay describing their goals and how this scholarship will help them achieve their dreams.</p>
-                   </div>
-                   
-                   <div className="mt-6 flex gap-2">
-                     <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs text-slate-500">Requirements: GPA 3.5+</span>
-                     <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs text-slate-500">Essay Required</span>
-                   </div>
+                  </div>
+
+                  <h3 className="font-serif text-xl font-bold mb-4 text-slate-800 dark:text-slate-200">The 2025 Future Leader Grant</h3>
+                  <div className="space-y-3 text-sm text-slate-500 font-serif leading-relaxed">
+                    <p>We are looking for <span className="bg-slate-200 dark:bg-slate-800">exceptional students</span> who demonstrate <span className="bg-slate-200 dark:bg-slate-800">strong leadership</span> and a commitment to <span className="bg-slate-200 dark:bg-slate-800">academic excellence</span>.</p>
+                    <p>Applicants should submit a 500-word essay describing their goals and how this scholarship will help them achieve their dreams.</p>
+                  </div>
+
+                  <div className="mt-6 flex gap-2">
+                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs text-slate-500">Requirements: GPA 3.5+</span>
+                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs text-slate-500">Essay Required</span>
+                  </div>
                 </div>
               </div>
 
@@ -779,64 +780,64 @@ const App = () => {
               <div className="relative">
                 <div className="absolute -top-10 left-0 text-xs font-bold uppercase tracking-widest text-purple-500">AI X-Ray View</div>
                 <div className="bg-white dark:bg-slate-950 p-8 rounded-2xl border-2 border-purple-500 shadow-2xl shadow-purple-500/20 relative overflow-hidden">
-                   
-                   {/* Scanning Line Animation */}
-                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent opacity-50 animate-pulse"></div>
 
-                   <div className="absolute top-0 right-0 bg-purple-600 text-white text-xs px-3 py-1 rounded-bl-lg font-bold flex items-center gap-1">
+                  {/* Scanning Line Animation */}
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent opacity-50 animate-pulse"></div>
+
+                  <div className="absolute top-0 right-0 bg-purple-600 text-white text-xs px-3 py-1 rounded-bl-lg font-bold flex items-center gap-1">
                     <Sparkles className="w-3 h-3" /> Insights Detected
-                   </div>
+                  </div>
 
-                   <h3 className="font-sans text-xl font-bold mb-6 text-slate-900 dark:text-white flex items-center gap-2">
-                     Hidden Scoring Weights
-                   </h3>
+                  <h3 className="font-sans text-xl font-bold mb-6 text-slate-900 dark:text-white flex items-center gap-2">
+                    Hidden Scoring Weights
+                  </h3>
 
-                   <div className="space-y-5">
-                     {/* Bar 1 */}
-                     <div>
-                       <div className="flex justify-between text-xs font-bold mb-1">
-                         <span className="text-slate-600 dark:text-slate-300">Community Impact (Not Grades)</span>
-                         <span className="text-purple-600">High Priority (60%)</span>
-                       </div>
-                       <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5">
-                         <div className="bg-purple-600 h-2.5 rounded-full w-[60%] shadow-[0_0_10px_rgba(147,51,234,0.5)]"></div>
-                       </div>
-                       <p className="text-[10px] text-slate-400 mt-1">AI Note: Past 5 winners all led non-profits.</p>
-                     </div>
+                  <div className="space-y-5">
+                    {/* Bar 1 */}
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-slate-600 dark:text-slate-300">Community Impact (Not Grades)</span>
+                        <span className="text-purple-600">High Priority (60%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5">
+                        <div className="bg-purple-600 h-2.5 rounded-full w-[60%] shadow-[0_0_10px_rgba(147,51,234,0.5)]"></div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">AI Note: Past 5 winners all led non-profits.</p>
+                    </div>
 
-                     {/* Bar 2 */}
-                     <div>
-                       <div className="flex justify-between text-xs font-bold mb-1">
-                         <span className="text-slate-600 dark:text-slate-300">Resilience / Grit</span>
-                         <span className="text-blue-500">Medium Priority (30%)</span>
-                       </div>
-                       <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5">
-                         <div className="bg-blue-500 h-2.5 rounded-full w-[30%]"></div>
-                       </div>
-                     </div>
+                    {/* Bar 2 */}
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-slate-600 dark:text-slate-300">Resilience / Grit</span>
+                        <span className="text-blue-500">Medium Priority (30%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5">
+                        <div className="bg-blue-500 h-2.5 rounded-full w-[30%]"></div>
+                      </div>
+                    </div>
 
-                     {/* Bar 3 */}
-                     <div>
-                       <div className="flex justify-between text-xs font-bold mb-1">
-                         <span className="text-slate-600 dark:text-slate-300 opacity-50">Academic GPA</span>
-                         <span className="text-slate-400">Low Priority (10%)</span>
-                       </div>
-                       <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5">
-                         <div className="bg-slate-400 h-2.5 rounded-full w-[10%]"></div>
-                       </div>
-                     </div>
-                   </div>
+                    {/* Bar 3 */}
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-slate-600 dark:text-slate-300 opacity-50">Academic GPA</span>
+                        <span className="text-slate-400">Low Priority (10%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5">
+                        <div className="bg-slate-400 h-2.5 rounded-full w-[10%]"></div>
+                      </div>
+                    </div>
+                  </div>
 
-                   {/* Action Box */}
-                   <div className="mt-6 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-100 dark:border-purple-800 flex items-start gap-3">
-                     <Brain className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
-                     <div>
-                       <p className="text-xs font-bold text-purple-700 dark:text-purple-300 uppercase mb-0.5">Strategy Recommendation</p>
-                       <p className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
-                         "Don't focus on your 4.0 GPA. Instead, lead the essay with the story of the fundraising event you organized."
-                       </p>
-                     </div>
-                   </div>
+                  {/* Action Box */}
+                  <div className="mt-6 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-100 dark:border-purple-800 flex items-start gap-3">
+                    <Brain className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-purple-700 dark:text-purple-300 uppercase mb-0.5">Strategy Recommendation</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
+                        "Don't focus on your 4.0 GPA. Instead, lead the essay with the story of the fundraising event you organized."
+                      </p>
+                    </div>
+                  </div>
 
                 </div>
               </div>
@@ -846,66 +847,66 @@ const App = () => {
         </div>
       </section>
 
-            {/* NEW: TEAM SECTION */}
+      {/* NEW: TEAM SECTION */}
       <section className="py-20 border-t border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold mb-12">Built by Team Velocity</h2>
-          
+
           <div className="flex flex-wrap justify-center gap-12">
-            
+
             {/* Team Member 1 */}
             <div className="flex flex-col items-center">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 mb-4 p-1">
                 <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
-                   <User className="w-10 h-10 text-slate-400" />
+                  <User className="w-10 h-10 text-slate-400" />
                 </div>
               </div>
               <h3 className="font-bold text-lg">Harmanpreet Singh</h3>
               <p className="text-blue-600 dark:text-blue-400 text-sm mb-1">Full Stack Engineer</p>
               <a href='https://github.com/HarmanPreet-Singh-XYT' className="flex gap-2 opacity-50">
-                 <Github className="w-4 h-4 hover:text-blue-400" />
+                <Github className="w-4 h-4 hover:text-blue-400" />
               </a>
             </div>
 
             {/* Team Member 2 */}
             <div className="flex flex-col items-center">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 mb-4 p-1">
-                 <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
-                   <Brain className="w-10 h-10 text-slate-400" />
+                <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
+                  <Brain className="w-10 h-10 text-slate-400" />
                 </div>
               </div>
               <h3 className="font-bold text-lg">Elliot Sones</h3>
               <p className="text-purple-600 dark:text-purple-400 text-sm mb-1">AI & ML Engineer</p>
               <a href='https://github.com/Elliot-Sones' className="flex gap-2 opacity-50">
-                 <Github className="w-4 h-4 hover:text-blue-400" />
+                <Github className="w-4 h-4 hover:text-blue-400" />
               </a>
             </div>
 
             {/* Team Member 3 */}
             <div className="flex flex-col items-center">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 mb-4 p-1">
-                 <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
-                   <Brain className="w-10 h-10 text-slate-400" />
+                <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
+                  <Brain className="w-10 h-10 text-slate-400" />
                 </div>
               </div>
               <h3 className="font-bold text-lg">Steric</h3>
               <p className="text-purple-600 dark:text-purple-400 text-sm mb-1">AI & ML Engineer</p>
               <a href='https://github.com/stericishere' className="flex gap-2 opacity-50">
-                 <Github className="w-4 h-4 hover:text-blue-400" />
+                <Github className="w-4 h-4 hover:text-blue-400" />
               </a>
             </div>
 
             {/* Team Member 4 */}
             <div className="flex flex-col items-center">
-               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-green-500 to-teal-600 mb-4 p-1">
-                 <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
-                   <PenTool className="w-10 h-10 text-slate-400" />
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-green-500 to-teal-600 mb-4 p-1">
+                <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
+                  <PenTool className="w-10 h-10 text-slate-400" />
                 </div>
               </div>
               <h3 className="font-bold text-lg">xh-ma(Therese)</h3>
               <p className="text-green-600 dark:text-green-400 text-sm mb-1">UI/UX & Product</p>
               <div className="flex gap-2 opacity-50">
-                 <Github className="w-4 h-4 hover:text-blue-400" />
+                <Github className="w-4 h-4 hover:text-blue-400" />
               </div>
             </div>
 
@@ -913,11 +914,11 @@ const App = () => {
         </div>
       </section>
 
-            {/* FOOTER */}
+      {/* FOOTER */}
       <footer className="bg-white dark:bg-slate-950 pt-20 pb-10 border-t border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-16">
-            
+
             {/* Brand Column */}
             <div className="col-span-2 md:col-span-1">
               <div className="flex items-center gap-2 mb-4">

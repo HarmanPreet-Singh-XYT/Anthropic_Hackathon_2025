@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 import uuid
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -605,7 +605,9 @@ async def start_workflow(
                     "essay_draft": final_state.get("essay_draft"),
                     "strategy_note": final_state.get("strategy_note"),
                     "match_score": final_state.get("match_score"),
-                    "gaps": final_state.get("identified_gaps")
+                    "gaps": final_state.get("identified_gaps"),
+                    "scholarship_intelligence": final_state.get("scholarship_intelligence"),
+                    "resume_text": final_state.get("resume_text")
                 }
                 
             print(f"[Workflow Task] Finished step for workflow session {workflow_session_id}")
@@ -663,8 +665,11 @@ async def resume_workflow(
                 "resume_optimizations": final_state.get("resume_optimizations"),
                 "optimized_resume_markdown": final_state.get("optimized_resume_markdown"),
                 "strategy_note": final_state.get("strategy_note"),
+                "strategy_note": final_state.get("strategy_note"),
                 "match_score": final_state.get("match_score"),
-                "gaps": final_state.get("identified_gaps")
+                "gaps": final_state.get("identified_gaps"),
+                "scholarship_intelligence": final_state.get("scholarship_intelligence"),
+                "resume_text": final_state.get("resume_text")
             }
             print(f"[Workflow Task] Completed session {session_id}")
             
@@ -796,11 +801,74 @@ async def start_interview_session(session_id: str = Form(...)):
             "target_gap": session_data["target_gap"]
         }
         
+        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error starting interview: {str(e)}"
         )
+
+
+# ==================== Outreach Endpoints ====================
+
+class GenerateOutreachRequest(BaseModel):
+    session_id: str
+
+
+@app.post("/api/outreach/generate")
+async def generate_outreach_email(request: GenerateOutreachRequest):
+    """
+    Generate an outreach email using session data
+    """
+    session_id = request.session_id
+    
+    if session_id not in workflow_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    session = workflow_sessions[session_id]
+    result_data = session.get("result", {})
+    
+    if not result_data:
+        raise HTTPException(status_code=400, detail="Workflow not complete, no data available")
+        
+    # Extract data from session result
+    intelligence = result_data.get("scholarship_intelligence", {})
+    official = intelligence.get("official", {})
+    
+    scholarship_name = official.get("scholarship_name", "Scholarship")
+    organization = official.get("organization", "Organization")
+    contact_email = official.get("contact_email")
+    contact_name = official.get("contact_name")
+    
+    gaps = result_data.get("gaps", [])
+    resume_text = result_data.get("resume_text", "")
+    
+    try:
+        # Initialize agent
+        llm_client = create_llm_client()
+        ghostwriter = GhostwriterAgent(llm_client)
+        
+        email_draft = await ghostwriter.draft_outreach_email(
+            scholarship_name=scholarship_name,
+            organization=organization,
+            contact_name=contact_name,
+            gaps=gaps,
+            student_context=resume_text
+        )
+        
+        return {
+            "subject": email_draft.get("subject"),
+            "body": email_draft.get("body"),
+            "contact_email": contact_email,
+            "contact_name": contact_name
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating email: {str(e)}"
+        )
+
 
 
 @app.post("/api/interview/message")
