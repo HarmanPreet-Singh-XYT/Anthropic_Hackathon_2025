@@ -161,8 +161,7 @@ Output ONLY the focus description, no additional text."""
                 }
             )
             
-            # Call LLM with tool support
-            # Combined prompt: Warm/Conversational (from HEAD) + Tool usage (from Scout)
+            # Combined prompt: Warm/Conversational (from experimental) + Tool usage (from Scout/HEAD)
             system_instruction = (
                 "You are a helpful mentor conducting a warm, conversational interview. "
                 "Generate a single, specific question that references the student's actual experiences. "
@@ -212,7 +211,7 @@ Output ONLY the focus description, no additional text."""
             else:
                 question = response.strip()
 
-            # Clean up response (remove quotes if present)
+            # Clean up response
             if question.startswith('"') and question.endswith('"'):
                 question = question[1:-1]
             
