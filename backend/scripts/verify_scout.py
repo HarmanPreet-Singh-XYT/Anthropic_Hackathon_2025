@@ -4,12 +4,12 @@ import sys
 from dotenv import load_dotenv
 
 # Add backend to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.scout import ScoutAgent
 
 # Load env vars from root
-root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(root_dir, '.env'))
 
 async def test_scout():

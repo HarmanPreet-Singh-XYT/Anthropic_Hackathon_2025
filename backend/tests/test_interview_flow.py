@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # Add backend to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.interview_manager import InterviewManager
 from utils.llm_client import create_llm_client
@@ -16,7 +16,7 @@ from utils.vector_store import VectorStore
 from dotenv import load_dotenv
 
 # Load env
-root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(root_dir, '.env'))
 
 

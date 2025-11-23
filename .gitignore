@@ -4,6 +4,12 @@
 **/__pycache__
 **/*.pyc
 **/chroma_db/
+**/.pytest_cache/
+
+# Backend specific
+backend/uploads/
+*.sqlite3
+
 # dependencies
 **/node_modules/
 /node_modules

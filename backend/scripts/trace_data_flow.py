@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from pprint import pprint
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.vector_store import VectorStore
 from utils.llm_client import create_llm_client

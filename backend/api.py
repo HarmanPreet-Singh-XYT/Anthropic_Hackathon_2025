@@ -665,7 +665,8 @@ async def start_workflow(
     }
     
     # Background task wrapper
-    async def run_workflow_background():\n        try:
+    async def run_workflow_background():
+        try:
             print(f"[Workflow Task] Starting for workflow session {workflow_session_id}")
             print(f"[Workflow Task] Using resume session: {resume_session_id}")
             

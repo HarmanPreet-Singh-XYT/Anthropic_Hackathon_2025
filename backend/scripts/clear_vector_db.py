@@ -3,6 +3,13 @@
 Utility script to clear the ChromaDB vector store
 """
 
+import sys
+import os
+from pathlib import Path
+
+# Add backend to path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from utils.vector_store import VectorStore
 from config.settings import settings
 
