@@ -206,22 +206,6 @@ See `docs/PRODUCTION_TESTING.md` for comprehensive manual testing procedures.
 
 This project was built for the Anthropic AI Hackathon. Contributions are welcome!
 
-### Development Workflow
-
-1. Create a feature branch
-2. Make your changes
-3. Run tests to ensure nothing breaks
-4. Submit a pull request with a clear description
-
-### Code Style
-
-- **Backend**: Follow PEP 8, use `black` for formatting, `ruff` for linting
-- **Frontend**: Follow ESLint rules, use Prettier for formatting
-
-## 📄 License
-
-[Add your license here]
-
 ## 🙏 Acknowledgments
 
 Built with:
