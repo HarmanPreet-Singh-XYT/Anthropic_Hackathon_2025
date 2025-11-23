@@ -1,6 +1,6 @@
 """
 FastAPI server for ScholarFit AI backend
-Handles resume upload, processing, and ChromaDB integration
+Handles resume upload, processing, and ChromaDB integration with PostgreSQL storage
 """
 
 import os
@@ -9,10 +9,11 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from config.settings import settings
 from utils.vector_store import VectorStore
@@ -27,6 +28,15 @@ from agents.ghostwriter import GhostwriterAgent
 from agents.interview_manager import InterviewManager
 from workflows import ScholarshipWorkflow
 
+# Database imports
+from workflows.database import DatabaseManager
+from workflows.db_operations import (
+    WorkflowSessionOperations,
+    ResumeSessionOperations,
+    InterviewSessionOperations,
+    ApplicationOperations
+)
+
 
 # ==================== Pydantic Models ====================
 
@@ -34,6 +44,7 @@ class HealthResponse(BaseModel):
     """Health check response model"""
     status: str
     vector_store_ready: bool
+    database_ready: bool
     collection_stats: Optional[Dict[str, Any]] = None
 
 
@@ -62,10 +73,7 @@ app = FastAPI(
 # Configure CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",  # Frontend dev server
-        "http://localhost:3000",  # Alternative frontend port
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,25 +82,29 @@ app.add_middleware(
 
 # ==================== Global State ====================
 
-# Vector store instance (initialized on startup)
+# Vector store instance
 vector_store: Optional[VectorStore] = None
+
+# Database manager
+db_manager: Optional[DatabaseManager] = None
 
 # Workflow orchestrator
 workflow_orchestrator: Optional[ScholarshipWorkflow] = None
 
 # Uploads directory
 UPLOADS_DIR = Path(__file__).parent / "uploads"
-
-# Session storage for Scout workflows (in-memory)
-workflow_sessions: Dict[str, Dict[str, Any]] = {}
-
-# Interview session storage (in-memory)
-interview_sessions: Dict[str, Dict[str, Any]] = {}
-
-# Application history storage (in-memory) - maps resume_session_id to list of applications
-application_history: Dict[str, List[Dict[str, Any]]] = {}
-
 UPLOADS_DIR.mkdir(exist_ok=True)
+
+
+# ==================== Database Dependency ====================
+
+def get_db():
+    """Dependency to get database session"""
+    db = next(db_manager.get_session())
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 # ==================== Startup/Shutdown ====================
@@ -100,9 +112,15 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    global vector_store
+    global vector_store, db_manager, workflow_orchestrator
     
     try:
+        # Initialize PostgreSQL database
+        print("Initializing PostgreSQL database...")
+        db_manager = DatabaseManager(settings.database_url)
+        db_manager.create_tables()
+        print("✓ PostgreSQL database initialized")
+        
         # Initialize ChromaDB vector store
         vector_store = VectorStore(
             collection_name="resumes",
@@ -130,14 +148,16 @@ async def startup_event():
         }
         print("✓ Agents initialized")
         
-        # Initialize Workflow
-        global workflow_orchestrator
-        workflow_orchestrator = ScholarshipWorkflow(agents)
+        # Initialize Workflow with database session factory
+        workflow_orchestrator = ScholarshipWorkflow(
+            agents=agents,
+            db_session_factory=db_manager.get_session
+        )
         print("✓ Workflow orchestrator ready")
         
     except Exception as e:
         print(f"✗ Error initializing services: {e}")
-        # Continue anyway - will be caught in health check
+        raise
 
 
 @app.on_event("shutdown")
@@ -165,46 +185,33 @@ async def root():
 
 
 @app.get("/api/health", response_model=HealthResponse)
-async def health_check():
-    """
-    Health check endpoint
-    Returns server status and vector store readiness
-    """
-    if vector_store is None:
-        return HealthResponse(
-            status="degraded",
-            vector_store_ready=False,
-            collection_stats=None
-        )
+async def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint"""
+    vector_ready = vector_store is not None
+    db_ready = db_manager is not None
     
-    try:
-        stats = vector_store.get_collection_stats()
-        return HealthResponse(
-            status="ok",
-            vector_store_ready=True,
-            collection_stats=stats
-        )
-    except Exception as e:
-        return HealthResponse(
-            status="degraded",
-            vector_store_ready=False,
-            collection_stats={"error": str(e)}
-        )
+    stats = None
+    if vector_ready:
+        try:
+            stats = vector_store.get_collection_stats()
+        except Exception as e:
+            stats = {"error": str(e)}
+    
+    return HealthResponse(
+        status="ok" if (vector_ready and db_ready) else "degraded",
+        vector_store_ready=vector_ready,
+        database_ready=db_ready,
+        collection_stats=stats
+    )
 
 
 @app.post("/api/upload-resume", response_model=UploadResponse)
-async def upload_resume(file: UploadFile = File(...)):
-    """
-    Upload and process a resume PDF
+async def upload_resume(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Upload and process a resume PDF"""
     
-    - Validates file type (PDF only)
-    - Validates file size (max 5MB)
-    - Processes PDF through ProfilerAgent
-    - Stores chunks in ChromaDB
-    - Cleans up temporary file
-    """
-    
-    # Check vector store is ready
     if vector_store is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -215,18 +222,18 @@ async def upload_resume(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Only PDF files are supported. Got: {file.filename}"
+            detail=f"Invalid file type. Only PDF files are supported."
         )
     
-    # Validate file size (5MB limit)
-    MAX_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+    # Validate file size
+    MAX_SIZE = settings.max_upload_size_mb * 1024 * 1024
     file_content = await file.read()
     file_size = len(file_content)
     
     if file_size > MAX_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large. Max size: 5MB. Got: {file_size / 1024 / 1024:.2f}MB"
+            detail=f"File too large. Max size: {settings.max_upload_size_mb}MB"
         )
     
     if file_size == 0:
@@ -239,8 +246,7 @@ async def upload_resume(file: UploadFile = File(...)):
     temp_filename = f"{uuid.uuid4()}_{file.filename}"
     temp_path = UPLOADS_DIR / temp_filename
     
-    
-    # Generate unique session ID for this resume
+    # Generate unique session ID
     session_id = str(uuid.uuid4())
     print(f"🆔 [API] Generated session_id: {session_id} for resume upload")
     
@@ -249,14 +255,11 @@ async def upload_resume(file: UploadFile = File(...)):
         with open(temp_path, "wb") as f:
             f.write(file_content)
         
-        # Optional: Clean up any old data for this session (if re-uploading)
-        # This prevents accumulation if the same session_id is reused
+        # Clean up old vector data for this session
         try:
-            all_docs = vector_store.collection.get(
-                where={"session_id": session_id}
-            )
+            all_docs = vector_store.collection.get(where={"session_id": session_id})
             if all_docs["ids"]:
-                print(f"🗑️ [API] Cleaning {len(all_docs['ids'])} old chunks for session: {session_id}")
+                print(f"🗑️ [API] Cleaning {len(all_docs['ids'])} old chunks")
                 vector_store.delete_documents(all_docs["ids"])
         except Exception as e:
             print(f"⚠️ [API] Could not clean old session data: {e}")
@@ -272,46 +275,49 @@ async def upload_resume(file: UploadFile = File(...)):
                 detail=f"Failed to process PDF: {error_msg}"
             )
         
-        print(f"✓ [API] Resume processed successfully for session: {session_id}")
+        # Store resume session in database
+        text_preview = result.get("resume_text", "")[:500] if result.get("resume_text") else None
+        resume_session = ResumeSessionOperations.create(
+            db=db,
+            session_id=session_id,
+            filename=file.filename,
+            file_size_bytes=file_size,
+            chunks_stored=result.get("chunks_stored", 0),
+            text_preview=text_preview
+        )
         
-        # Build response
+        print(f"✓ [API] Resume processed and stored in DB for session: {session_id}")
+        
         return UploadResponse(
             success=True,
             message="Resume processed successfully",
             chunks_stored=result.get("chunks_stored", 0),
             metadata={
-                "session_id": session_id,  # Return to frontend
+                "session_id": session_id,
                 "filename": file.filename,
                 "file_size_bytes": file_size,
                 "file_size_mb": round(file_size / 1024 / 1024, 2),
-                "text_preview": result.get("resume_text", "")[:200] + "..." 
-                    if result.get("resume_text") else None
+                "text_preview": text_preview
             }
         )
     
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     
     except Exception as e:
-        # Catch any other errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected error processing resume: {str(e)}"
         )
     
     finally:
-        # Clean up temporary file
         if temp_path.exists():
             temp_path.unlink()
 
 
 @app.get("/api/resume-stats")
-async def get_resume_stats():
-    """
-    Get ChromaDB collection statistics
-    Returns document count and collection info
-    """
+async def get_resume_stats(db: Session = Depends(get_db)):
+    """Get ChromaDB collection statistics"""
     if vector_store is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -326,15 +332,14 @@ async def get_resume_stats():
         }
     except Exception as e:
         raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting stats: {str(e)}"
         )
 
 
 @app.delete("/api/resume")
-async def clear_resume():
-    """
-    Clear all resume data from ChromaDB
-    Useful for testing and resetting state
-    """
+async def clear_resume(db: Session = Depends(get_db)):
+    """Clear all resume data from ChromaDB"""
     if vector_store is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -342,14 +347,11 @@ async def clear_resume():
         )
     
     try:
-        # Get count before clearing
         stats_before = vector_store.get_collection_stats()
         count_before = stats_before.get("count", 0)
         
-        # Clear collection
         vector_store.clear_collection()
         
-        # Get count after
         stats_after = vector_store.get_collection_stats()
         count_after = stats_after.get("count", 0)
         
@@ -367,16 +369,11 @@ async def clear_resume():
 
 
 @app.delete("/api/resume/session/{session_id}")
-async def delete_session_data(session_id: str):
-    """
-    Delete resume data for a specific session
-    
-    Args:
-        session_id: Session ID from resume upload
-        
-    Returns:
-        Success status and number of documents deleted
-    """
+async def delete_session_data(
+    session_id: str,
+    db: Session = Depends(get_db)
+):
+    """Delete resume data for a specific session"""
     if vector_store is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -386,29 +383,22 @@ async def delete_session_data(session_id: str):
     try:
         print(f"🗑️ [API] Deleting resume data for session: {session_id}")
         
-        # Get all documents for this session
-        all_docs = vector_store.collection.get(
-            where={"session_id": session_id}
-        )
+        # Delete from vector store
+        all_docs = vector_store.collection.get(where={"session_id": session_id})
+        deleted_count = 0
         
-        if not all_docs["ids"]:
-            print(f"   ℹ️ No documents found for session: {session_id}")
-            return {
-                "success": True,
-                "message": "No documents found for this session",
-                "documents_deleted": 0,
-                "session_id": session_id
-            }
+        if all_docs["ids"]:
+            vector_store.delete_documents(all_docs["ids"])
+            deleted_count = len(all_docs["ids"])
         
-        # Delete the documents
-        vector_store.delete_documents(all_docs["ids"])
-        deleted_count = len(all_docs["ids"])
+        # Delete from database
+        ResumeSessionOperations.delete(db, session_id)
         
-        print(f"   ✓ Deleted {deleted_count} documents for session: {session_id}")
+        print(f"   ✓ Deleted {deleted_count} documents and DB record")
         
         return {
             "success": True,
-            "message": f"Session data deleted successfully",
+            "message": "Session data deleted successfully",
             "documents_deleted": deleted_count,
             "session_id": session_id
         }
@@ -422,16 +412,11 @@ async def delete_session_data(session_id: str):
 
 
 @app.get("/api/resume/session/{session_id}/validate")
-async def validate_resume_session(session_id: str):
-    """
-    Validate that a resume session exists and has data
-    
-    Args:
-        session_id: Session ID from resume upload
-        
-    Returns:
-        Validation status, chunk count, and metadata
-    """
+async def validate_resume_session(
+    session_id: str,
+    db: Session = Depends(get_db)
+):
+    """Validate that a resume session exists"""
     if vector_store is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -439,15 +424,10 @@ async def validate_resume_session(session_id: str):
         )
     
     try:
-        print(f"✓ [API] Validating resume session: {session_id}")
+        # Check database
+        resume_session = ResumeSessionOperations.get(db, session_id)
         
-        # Query for documents with this session_id
-        all_docs = vector_store.collection.get(
-            where={"session_id": session_id}
-        )
-        
-        if not all_docs["ids"]:
-            print(f"   ℹ️ No documents found for session: {session_id}")
+        if not resume_session:
             return {
                 "valid": False,
                 "session_id": session_id,
@@ -455,23 +435,23 @@ async def validate_resume_session(session_id: str):
                 "message": "No resume data found for this session"
             }
         
-        # Session exists and has data
-        chunks_count = len(all_docs["ids"])
-        print(f"   ✓ Found {chunks_count} chunks for session: {session_id}")
-        
-        # Extract metadata from first chunk
-        metadata = all_docs["metadatas"][0] if all_docs["metadatas"] else {}
+        # Check vector store
+        all_docs = vector_store.collection.get(where={"session_id": session_id})
+        chunks_count = len(all_docs["ids"]) if all_docs["ids"] else 0
         
         return {
             "valid": True,
             "session_id": session_id,
             "chunks_count": chunks_count,
-            "metadata": metadata,
+            "metadata": {
+                "filename": resume_session.filename,
+                "file_size_bytes": resume_session.file_size_bytes,
+                "created_at": resume_session.created_at.isoformat()
+            },
             "message": "Resume session is valid"
         }
     
     except Exception as e:
-        print(f"   ❌ Error validating session {session_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error validating session: {str(e)}"
@@ -479,33 +459,38 @@ async def validate_resume_session(session_id: str):
 
 
 @app.get("/api/applications/history/{resume_session_id}")
-async def get_application_history(resume_session_id: str):
-    """
-    Get all applications submitted for a resume session
-    
-    Args:
-        resume_session_id: Resume session ID
-        
-    Returns:
-        List of applications with basic info (workflow_session_id, scholarship_url, status, created_at)
-    """
+async def get_application_history(
+    resume_session_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get all applications for a resume session"""
     try:
-        print(f"📋 [API] Fetching application history for resume session: {resume_session_id}")
+        print(f"📋 [API] Fetching application history for: {resume_session_id}")
         
-        # Get all applications for this resume session
-        applications = application_history.get(resume_session_id, [])
+        applications = ApplicationOperations.get_by_resume_session(db, resume_session_id)
         
-        print(f"   ✓ Found {len(applications)} applications")
+        app_list = [
+            {
+                "workflow_session_id": app.workflow_session_id,
+                "scholarship_url": app.scholarship_url,
+                "status": app.status,
+                "match_score": app.match_score,
+                "had_interview": app.had_interview,
+                "created_at": app.created_at.isoformat()
+            }
+            for app in applications
+        ]
+        
+        print(f"   ✓ Found {len(app_list)} applications")
         
         return {
             "success": True,
             "resume_session_id": resume_session_id,
-            "applications": applications,
-            "count": len(applications)
+            "applications": app_list,
+            "count": len(app_list)
         }
     
     except Exception as e:
-        print(f"   ❌ Error fetching application history: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching application history: {str(e)}"
@@ -517,49 +502,36 @@ async def get_application_history(resume_session_id: str):
 @app.post("/api/scout/start")
 async def start_scout_workflow(
     background_tasks: BackgroundTasks,
-    scholarship_url: str = Form(...)
+    scholarship_url: str = Form(...),
+    db: Session = Depends(get_db)
 ):
-    """
-    Start Scout agent workflow in background
-    
-    Args:
-        scholarship_url: URL of scholarship to analyze
-        
-    Returns:
-        session_id for polling status
-    """
-    from agents.scout import ScoutAgent
-    
-    # Generate unique session ID
+    """Start Scout agent workflow"""
     session_id = str(uuid.uuid4())
     
-    # Initialize session
-    workflow_sessions[session_id] = {
-        "session_id": session_id,
-        "status": "processing",
-        "created_at": datetime.utcnow().isoformat(),
-        "scholarship_url": scholarship_url,
-        "result": None,
-        "error": None
-    }
+    # Create workflow session in database
+    WorkflowSessionOperations.create(
+        db=db,
+        session_id=session_id,
+        scholarship_url=scholarship_url
+    )
     
-    # Background task to run Scout
     async def run_scout_background():
+        db_session = next(db_manager.get_session())
         try:
-            print(f"[Scout Background Task] Starting for session {session_id}")
+            print(f"[Scout] Starting for session {session_id}")
             scout = ScoutAgent()
             result = await scout.run(scholarship_url, debug=False)
             
-            workflow_sessions[session_id]["status"] = "complete"
-            workflow_sessions[session_id]["result"] = result
-            print(f"[Scout Background Task] Completed for session {session_id}")
+            WorkflowSessionOperations.update_status(db_session, session_id, "complete")
+            WorkflowSessionOperations.update_results(db_session, session_id, {"scout_result": result})
             
+            print(f"[Scout] Completed for session {session_id}")
         except Exception as e:
-            print(f"[Scout Background Task] Error for session {session_id}: {e}")
-            workflow_sessions[session_id]["status"] = "error"
-            workflow_sessions[session_id]["error"] = str(e)
+            print(f"[Scout] Error: {e}")
+            WorkflowSessionOperations.update_status(db_session, session_id, "error", str(e))
+        finally:
+            db_session.close()
     
-    # Add background task
     background_tasks.add_task(run_scout_background)
     
     return {
@@ -570,29 +542,25 @@ async def start_scout_workflow(
 
 
 @app.get("/api/scout/status/{session_id}")
-async def get_scout_status(session_id: str):
-    """
-    Check Scout workflow status
+async def get_scout_status(
+    session_id: str,
+    db: Session = Depends(get_db)
+):
+    """Check Scout workflow status"""
+    workflow = WorkflowSessionOperations.get(db, session_id)
     
-    Args:
-        session_id: Session ID from start_scout_workflow
-        
-    Returns:
-        Current status and results (if complete)
-    """
-    if session_id not in workflow_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Session not found")
     
-    session = workflow_sessions[session_id]
+    result = None
+    if workflow.status == "complete":
+        result = {"scout_result": workflow.matchmaker_results}
     
     return {
         "session_id": session_id,
-        "status": session["status"],
-        "result": session.get("result"),
-        "error": session.get("error")
+        "status": workflow.status,
+        "result": result,
+        "error": workflow.error_message
     }
 
 
@@ -602,31 +570,20 @@ async def get_scout_status(session_id: str):
 async def start_workflow(
     background_tasks: BackgroundTasks,
     scholarship_url: str = Form(...),
-    resume_session_id: str = Form(...),  # Session ID from resume upload
+    resume_session_id: str = Form(...),
     resume_file: Optional[UploadFile] = File(None),
-    resume_path: Optional[str] = Form(None)
+    resume_path: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
 ):
-    """
-    Start the full ScholarFit AI workflow
+    """Start the full ScholarFit AI workflow"""
     
-    Args:
-        scholarship_url: URL of scholarship
-        resume_session_id: Session ID from resume upload (for vector DB filtering)
-        resume_file: Uploaded PDF resume (optional)
-        resume_path: Path to already uploaded resume (optional)
-    """
     if workflow_orchestrator is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Workflow system not initialized"
-        )
-        
+        raise HTTPException(status_code=503, detail="Workflow system not initialized")
+    
     # Handle resume source
     target_resume_path = resume_path
     
-    # If resume_file is provided, save it temporarily
     if resume_file:
-        # Process uploaded file similar to upload_resume
         temp_filename = f"{uuid.uuid4()}_{resume_file.filename}"
         temp_path = UPLOADS_DIR / temp_filename
         content = await resume_file.read()
@@ -634,106 +591,78 @@ async def start_workflow(
             f.write(content)
         target_resume_path = str(temp_path)
     
-    # For session-based workflow, we don't need resume_path
-    # The resume was already uploaded and processed via /api/upload-resume
-    # We just need the session_id to query the vector DB
     if not target_resume_path and not resume_session_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must provide either resume_file, resume_path, or resume_session_id"
-        )
+        raise HTTPException(status_code=400, detail="Must provide resume source")
     
-    # Use a dummy path if we're using session-based approach
     if not target_resume_path:
-        target_resume_path = "session_based"  # Placeholder - not actually used
-        
-    print(f"🆔 [API] Starting workflow with resume session: {resume_session_id}")
+        target_resume_path = "session_based"
     
-    # Generate workflow session ID (different from resume session_id)
     workflow_session_id = str(uuid.uuid4())
     
-    # Initialize workflow session
-    workflow_sessions[workflow_session_id] = {
-        "session_id": workflow_session_id,
-        "resume_session_id": resume_session_id,  # Track resume session
-        "status": "processing",
-        "created_at": datetime.utcnow().isoformat(),
-        "scholarship_url": scholarship_url,
-        "result": None,
-        "error": None,
-        "state": None  # To store intermediate state
-    }
+    # Create workflow session in database
+    WorkflowSessionOperations.create(
+        db=db,
+        session_id=workflow_session_id,
+        scholarship_url=scholarship_url,
+        resume_session_id=resume_session_id
+    )
     
-    # Background task wrapper
     async def run_workflow_background():
+        db_session = next(db_manager.get_session())
         try:
-            print(f"[Workflow Task] Starting for workflow session {workflow_session_id}")
-            print(f"[Workflow Task] Using resume session: {resume_session_id}")
+            print(f"[Workflow] Starting {workflow_session_id}")
             
-            # Get scholarship URL from session (avoid closure issues)
-            session_scholarship_url = workflow_sessions[workflow_session_id]["scholarship_url"]
-            
-            # Run workflow with resume session ID
             final_state = await workflow_orchestrator.run(
-                scholarship_url=session_scholarship_url,
+                scholarship_url=scholarship_url,
                 resume_pdf_path=target_resume_path,
-                session_id=resume_session_id  # Pass resume session for vector queries
+                session_id=resume_session_id
             )
             
-            # Check for interrupt (Matchmaker complete or Interview needed)
-            # If we have matchmaker results but no essay, we are paused
+            # Check for pause point
             if final_state.get("matchmaker_results") and not final_state.get("essay_draft"):
-                workflow_sessions[workflow_session_id]["status"] = "waiting_for_input"
-                workflow_sessions[workflow_session_id]["result"] = {
+                WorkflowSessionOperations.update_status(db_session, workflow_session_id, "waiting_for_input")
+                WorkflowSessionOperations.update_checkpoint(db_session, workflow_session_id, final_state)
+                WorkflowSessionOperations.update_results(db_session, workflow_session_id, {
                     "matchmaker_results": final_state.get("matchmaker_results"),
-                    "context": "Review match results before proceeding",
-                    # Include gaps if any for the frontend to decide on interview
-                    "gaps": final_state.get("identified_gaps"),
-                    "trigger_interview": final_state.get("trigger_interview")
-                }
-                workflow_sessions[workflow_session_id]["state"] = final_state
+                    "gaps": final_state.get("identified_gaps")
+                })
             else:
-                workflow_sessions[workflow_session_id]["status"] = "complete"
-                # Explicitly structure the result to match frontend expectations
-                # and avoid sending the entire state (which can be huge)
-                workflow_sessions[workflow_session_id]["result"] = {
+                # Complete workflow
+                results = {
                     "matchmaker_results": final_state.get("matchmaker_results"),
                     "essay_draft": final_state.get("essay_draft"),
                     "strategy_note": final_state.get("strategy_note"),
                     "match_score": final_state.get("match_score"),
                     "gaps": final_state.get("identified_gaps"),
-                    "scholarship_intelligence": final_state.get("scholarship_intelligence"),
-                    "resume_text": final_state.get("resume_text")
+                    "scholarship_intelligence": final_state.get("scholarship_intelligence")
                 }
                 
-                # Track completed application in history
-                app_scholarship_url = workflow_sessions[workflow_session_id].get("scholarship_url", "Unknown")
-                if resume_session_id not in application_history:
-                    application_history[resume_session_id] = []
+                WorkflowSessionOperations.complete(db_session, workflow_session_id, results)
                 
-                application_history[resume_session_id].append({
-                    "workflow_session_id": workflow_session_id,
-                    "scholarship_url": app_scholarship_url,
-                    "status": "complete",
-                    "created_at": workflow_sessions[workflow_session_id].get("created_at"),
-                    "match_score": final_state.get("match_score"),
-                    "had_interview": False
-                })
-                print(f"[Workflow Task] Added application to history for resume session {resume_session_id}")
-                
-            print(f"[Workflow Task] Finished step for workflow session {workflow_session_id}")
+                # Track application
+                ApplicationOperations.create(
+                    db=db_session,
+                    workflow_session_id=workflow_session_id,
+                    resume_session_id=resume_session_id,
+                    scholarship_url=scholarship_url,
+                    match_score=final_state.get("match_score"),
+                    had_interview=False
+                )
+            
+            print(f"[Workflow] Completed {workflow_session_id}")
             
         except Exception as e:
-            print(f"[Workflow Task] Error for workflow session {workflow_session_id}: {e}")
-            workflow_sessions[workflow_session_id]["status"] = "error"
-            workflow_sessions[workflow_session_id]["error"] = str(e)
-            
+            print(f"[Workflow] Error: {e}")
+            WorkflowSessionOperations.update_status(db_session, workflow_session_id, "error", str(e))
+        finally:
+            db_session.close()
+    
     background_tasks.add_task(run_workflow_background)
     
     return {
         "session_id": workflow_session_id,
         "status": "processing",
-        "message": "Scholarship workflow started"
+        "message": "Workflow started"
     }
 
 
@@ -741,154 +670,131 @@ async def start_workflow(
 async def resume_workflow(
     background_tasks: BackgroundTasks,
     session_id: str = Form(...),
-    bridge_story: Optional[str] = Form(None)
+    bridge_story: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
 ):
-    """
-    Resume workflow with student's bridge story (optional)
-    """
-    if workflow_orchestrator is None:
-        raise HTTPException(status_code=503, detail="System not initialized")
-        
-    if session_id not in workflow_sessions:
+    """Resume workflow after interview"""
+    
+    workflow = WorkflowSessionOperations.get(db, session_id)
+    
+    if not workflow:
         raise HTTPException(status_code=404, detail="Session not found")
-        
-    session = workflow_sessions[session_id]
-    if session["status"] != "waiting_for_input":
-        raise HTTPException(status_code=400, detail=f"Session is not waiting for input (status: {session['status']})")
-        
-    # Update status
-    session["status"] = "processing_resume"
-    checkpoint_state = session["state"]
+    
+    if workflow.status != "waiting_for_input":
+        raise HTTPException(status_code=400, detail=f"Invalid status: {workflow.status}")
+    
+    WorkflowSessionOperations.update_status(db, session_id, "processing_resume")
     
     async def run_resume_background():
+        db_session = next(db_manager.get_session())
         try:
-            print(f"[Workflow Task] Resuming session {session_id}")
+            print(f"[Workflow] Resuming {session_id}")
             
             final_state = await workflow_orchestrator.resume_after_interview(
                 bridge_story=bridge_story,
-                checkpoint_state=checkpoint_state
+                checkpoint_state=workflow.state_checkpoint
             )
-            print(final_state.get("resume_markdown"))
-            session["status"] = "complete"
-            session["result"] = {
+            
+            results = {
                 "matchmaker_results": final_state.get("matchmaker_results"),
                 "essay_draft": final_state.get("essay_draft"),
                 "resume_optimizations": final_state.get("resume_optimizations"),
-                "optimized_resume_markdown": final_state.get("resume_markdown"),  # Map resume_markdown to optimized_resume_markdown for frontend
+                "optimized_resume_markdown": final_state.get("resume_markdown"),
                 "strategy_note": final_state.get("strategy_note"),
                 "match_score": final_state.get("match_score"),
-                "gaps": final_state.get("identified_gaps"),
-                "scholarship_intelligence": final_state.get("scholarship_intelligence"),
-                "resume_text": final_state.get("resume_text")
+                "gaps": final_state.get("identified_gaps")
             }
             
-            # Track completed application with interview in history  
-            resume_session_id = session.get("resume_session_id")
-            app_scholarship_url = session.get("scholarship_url", "Unknown")
-            if resume_session_id:
-                if resume_session_id not in application_history:
-                    application_history[resume_session_id] = []
-                
-                application_history[resume_session_id].append({
-                    "workflow_session_id": session_id,
-                    "scholarship_url": app_scholarship_url,
-                    "status": "complete",
-                    "created_at": session.get("created_at"),
-                    "match_score": final_state.get("match_score"),
-                    "had_interview": True
-                })
-                print(f"[Workflow Task] Added application with interview to history for resume session {resume_session_id}")
+            WorkflowSessionOperations.complete(db_session, session_id, results)
             
-            print(f"[Workflow Task] Completed session {session_id}")
+            # Track application with interview
+            ApplicationOperations.create(
+                db=db_session,
+                workflow_session_id=session_id,
+                resume_session_id=workflow.resume_session_id,
+                scholarship_url=workflow.scholarship_url,
+                match_score=final_state.get("match_score"),
+                had_interview=True
+            )
+            
+            print(f"[Workflow] Completed resume {session_id}")
             
         except Exception as e:
-            print(f"[Workflow Task] Error resuming session {session_id}: {e}")
-            session["status"] = "error"
-            session["error"] = str(e)
-            
+            print(f"[Workflow] Error: {e}")
+            WorkflowSessionOperations.update_status(db_session, session_id, "error", str(e))
+        finally:
+            db_session.close()
+    
     background_tasks.add_task(run_resume_background)
     
     return {
         "session_id": session_id,
         "status": "processing_resume",
-        "message": "Workflow resumed with bridge story"
+        "message": "Workflow resumed"
     }
 
 
 @app.get("/api/workflow/status/{session_id}")
-async def get_workflow_status(session_id: str):
+async def get_workflow_status(
+    session_id: str,
+    db: Session = Depends(get_db)
+):
     """Get workflow status"""
-    if session_id not in workflow_sessions:
+    
+    workflow = WorkflowSessionOperations.get(db, session_id)
+    
+    if not workflow:
         raise HTTPException(status_code=404, detail="Session not found")
-        
-    session = workflow_sessions[session_id]
     
-    # Clean up state from response to avoid huge payload
-    response = {
+    result = None
+    if workflow.status in ["complete", "waiting_for_input"]:
+        result = {
+            "matchmaker_results": workflow.matchmaker_results,
+            "essay_draft": workflow.essay_draft,
+            "resume_optimizations": workflow.resume_optimizations,
+            "optimized_resume_markdown": workflow.optimized_resume_markdown,
+            "strategy_note": workflow.strategy_note,
+            "match_score": workflow.match_score,
+            "gaps": workflow.gaps,
+            "scholarship_intelligence": workflow.scholarship_intelligence
+        }
+    
+    return {
         "session_id": session_id,
-        "status": session["status"],
-        "result": session.get("result"),
-        "error": session.get("error")
+        "status": workflow.status,
+        "result": result,
+        "error": workflow.error_message
     }
-    
-    return response
 
+
+# ==================== Interview Endpoints ====================
 
 @app.post("/api/interview/start")
-async def start_interview_session(session_id: str = Form(...)):
-    """
-    Initialize multi-turn interview session
+async def start_interview_session(
+    session_id: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Initialize interview session"""
     
-    Args:
-        session_id: Workflow session ID from matchmaker
-        
-    Returns:
-        interview_id, gaps with weights, first question
-    """
-    # Get workflow session
-    if session_id not in workflow_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow session not found"
-        )
+    workflow = WorkflowSessionOperations.get(db, session_id)
     
-    workflow_session = workflow_sessions[session_id]
+    if not workflow or workflow.status != "waiting_for_input":
+        raise HTTPException(status_code=400, detail="Workflow not ready for interview")
     
-    # Check if workflow has matchmaker results
-    if workflow_session["status"] != "waiting_for_input":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Workflow not ready for interview (status: {workflow_session['status']})"
-        )
-    
-    result = workflow_session.get("result", {})
-    matchmaker_results = result.get("matchmaker_results", {})
-    
-    if not matchmaker_results:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Matchmaker results not available"
-        )
-    
-    # Extract data
-    gaps = matchmaker_results.get("gaps", [])
+    gaps = workflow.gaps or []
+    matchmaker_results = workflow.matchmaker_results or {}
     weighted_keywords = matchmaker_results.get("weighted_values", {})
     
     if not gaps:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No gaps detected - interview not needed"
-        )
+        raise HTTPException(status_code=400, detail="No gaps detected")
     
     # Get resume text from state
-    state = workflow_session.get("state", {})
+    state = workflow.state_checkpoint or {}
     resume_text = state.get("resume_text", "")
     
-    # Initialize interview manager
     llm_client = create_llm_client()
     interview_manager = InterviewManager(llm_client, vector_store)
     
-    # Start session
     try:
         session_data = await interview_manager.start_session(
             gaps=gaps,
@@ -897,22 +803,20 @@ async def start_interview_session(session_id: str = Form(...)):
             matchmaker_evidence=matchmaker_results.get("evidence", {})
         )
         
-        # Create interview session
         interview_id = str(uuid.uuid4())
-        interview_sessions[interview_id] = {
-            "interview_id": interview_id,
-            "session_id": session_id,
-            "gaps": gaps,
-            "weighted_keywords": weighted_keywords,
-            "gap_confidences": session_data["gap_confidences"],
-            "prioritized_gaps": session_data["prioritized_gaps"],
-            "current_target": session_data["target_gap"],
-            "conversation_history": [],
-            "collected_evidence": {},
-            "created_at": datetime.utcnow().isoformat()
-        }
         
-        # Format response
+        # Store in database
+        InterviewSessionOperations.create(
+            db=db,
+            interview_id=interview_id,
+            workflow_session_id=session_id,
+            gaps=gaps,
+            weighted_keywords=weighted_keywords,
+            gap_confidences=session_data["gap_confidences"],
+            prioritized_gaps=session_data["prioritized_gaps"],
+            current_target=session_data["target_gap"]
+        )
+        
         return {
             "interview_id": interview_id,
             "gaps": [
@@ -929,12 +833,111 @@ async def start_interview_session(session_id: str = Form(...)):
             "target_gap": session_data["target_gap"]
         }
         
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error starting interview: {str(e)}")
+
+
+@app.post("/api/interview/message")
+async def process_interview_message(
+    interview_id: str = Form(...),
+    message: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Process interview message"""
+    
+    interview = InterviewSessionOperations.get(db, interview_id)
+    
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    
+    # Add user message
+    InterviewSessionOperations.add_message(db, interview_id, "user", message)
+    
+    llm_client = create_llm_client()
+    interview_manager = InterviewManager(llm_client, vector_store)
+    
+    try:
+        result = await interview_manager.process_answer(
+            answer=message,
+            target_gap=interview.current_target,
+            current_confidence=interview.gap_confidences[interview.current_target],
+            gap_weight=interview.weighted_keywords.get(interview.current_target, 0.0),
+            conversation_history=interview.conversation_history,
+            all_gaps=interview.gaps,
+            gap_confidences=interview.gap_confidences,
+            weighted_keywords=interview.weighted_keywords
+        )
+        
+        # Update confidences
+        new_confidences = interview.gap_confidences.copy()
+        new_confidences[interview.current_target] = result["confidence_update"]
+        
+        new_target = result["next_target"] or interview.current_target
+        
+        InterviewSessionOperations.update_confidences(db, interview_id, new_confidences, new_target)
+        
+        # Store evidence
+        InterviewSessionOperations.add_evidence(
+            db, interview_id, interview.current_target, result["evidence_extracted"]
+        )
+        
+        # Add AI response
+        InterviewSessionOperations.add_message(db, interview_id, "assistant", result["response"])
+        
+        # Build gap updates
+        gap_updates = {}
+        for gap in interview.gaps:
+            conf = new_confidences[gap]
+            gap_updates[gap] = {
+                "confidence": conf,
+                "status": result["gap_status"][gap]
+            }
+        
+        return {
+            "response": result["response"],
+            "gap_updates": gap_updates,
+            "keyword_alignment": new_confidences,
+            "is_complete": result["is_complete"],
+            "next_target": result["next_target"] or interview.current_target
+        }
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error starting interview: {str(e)}"
+        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+
+
+@app.post("/api/interview/complete")
+async def complete_interview(
+    interview_id: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Complete interview and synthesize bridge story"""
+    
+    interview = InterviewSessionOperations.get(db, interview_id)
+    
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    
+    llm_client = create_llm_client()
+    interview_manager = InterviewManager(llm_client, vector_store)
+    
+    try:
+        bridge_story = await interview_manager.synthesize_bridge_story(
+            conversation_history=interview.conversation_history,
+            gaps_addressed=interview.gap_confidences,
+            weighted_keywords=interview.weighted_keywords
         )
+        
+        # Store bridge story
+        InterviewSessionOperations.complete(db, interview_id, bridge_story)
+        
+        return {
+            "bridge_story": bridge_story,
+            "final_alignment": interview.gap_confidences,
+            "ready_for_generation": True
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error completing interview: {str(e)}")
 
 
 # ==================== Outreach Endpoints ====================
@@ -944,23 +947,21 @@ class GenerateOutreachRequest(BaseModel):
 
 
 @app.post("/api/outreach/generate")
-async def generate_outreach_email(request: GenerateOutreachRequest):
-    """
-    Generate an outreach email using session data
-    """
-    session_id = request.session_id
+async def generate_outreach_email(
+    request: GenerateOutreachRequest,
+    db: Session = Depends(get_db)
+):
+    """Generate outreach email"""
     
-    if session_id not in workflow_sessions:
+    workflow = WorkflowSessionOperations.get(db, request.session_id)
+    
+    if not workflow:
         raise HTTPException(status_code=404, detail="Session not found")
-        
-    session = workflow_sessions[session_id]
-    result_data = session.get("result", {})
     
-    if not result_data:
-        raise HTTPException(status_code=400, detail="Workflow not complete, no data available")
-        
-    # Extract data from session result
-    intelligence = result_data.get("scholarship_intelligence", {})
+    if not workflow.scholarship_intelligence:
+        raise HTTPException(status_code=400, detail="Workflow not complete")
+    
+    intelligence = workflow.scholarship_intelligence or {}
     official = intelligence.get("official", {})
     
     scholarship_name = official.get("scholarship_name", "Scholarship")
@@ -968,11 +969,13 @@ async def generate_outreach_email(request: GenerateOutreachRequest):
     contact_email = official.get("contact_email")
     contact_name = official.get("contact_name")
     
-    gaps = result_data.get("gaps", [])
-    resume_text = result_data.get("resume_text", "")
+    gaps = workflow.gaps or []
+    
+    # Get resume text from state
+    state = workflow.state_checkpoint or {}
+    resume_text = state.get("resume_text", "")
     
     try:
-        # Initialize agent
         llm_client = create_llm_client()
         ghostwriter = GhostwriterAgent(llm_client)
         
@@ -992,150 +995,8 @@ async def generate_outreach_email(request: GenerateOutreachRequest):
         }
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating email: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error generating email: {str(e)}")
 
-
-
-@app.post("/api/interview/message")
-async def process_interview_message(
-    interview_id: str = Form(...),
-    message: str = Form(...)
-):
-    """
-    Process user's answer and generate next question
-    
-    Args:
-        interview_id: Interview session ID
-        message: User's answer
-        
-    Returns:
-        AI response, updated confidences, completion status
-    """
-    if interview_id not in interview_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Interview session not found"
-        )
-    
-    session = interview_sessions[interview_id]
-    
-    # Add user message to history
-    session["conversation_history"].append({
-        "role": "user",
-        "content": message
-    })
-    
-    # Initialize interview manager
-    llm_client = create_llm_client()
-    interview_manager = InterviewManager(llm_client, vector_store)
-    
-    try:
-        # Process answer
-        result = await interview_manager.process_answer(
-            answer=message,
-            target_gap=session["current_target"],
-            current_confidence=session["gap_confidences"][session["current_target"]],
-            gap_weight=session["weighted_keywords"].get(session["current_target"], 0.0),
-            conversation_history=session["conversation_history"],
-            all_gaps=session["gaps"],
-            gap_confidences=session["gap_confidences"],
-            weighted_keywords=session["weighted_keywords"]
-        )
-        
-        # Update session state
-        session["gap_confidences"][session["current_target"]] = result["confidence_update"]
-        
-        # Store evidence
-        if session["current_target"] not in session["collected_evidence"]:
-            session["collected_evidence"][session["current_target"]] = []
-        session["collected_evidence"][session["current_target"]].append(
-            result["evidence_extracted"]
-        )
-        
-        # Update current target if moved to next gap
-        if result["next_target"]:
-            session["current_target"] = result["next_target"]
-        
-        # Add AI response to history
-        session["conversation_history"].append({
-            "role": "assistant",
-            "content": result["response"]
-        })
-        
-        # Build gap updates for frontend
-        gap_updates = {}
-        for gap in session["gaps"]:
-            conf = session["gap_confidences"][gap]
-            gap_updates[gap] = {
-                "confidence": conf,
-                "status": result["gap_status"][gap],
-                "evidence_collected": session["collected_evidence"].get(gap, [])
-            }
-        
-        return {
-            "response": result["response"],
-            "gap_updates": gap_updates,
-            "keyword_alignment": session["gap_confidences"],
-            "is_complete": result["is_complete"],
-            "next_target": result["next_target"] or session["current_target"]
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing message: {str(e)}"
-        )
-
-
-@app.post("/api/interview/complete")
-async def complete_interview(interview_id: str = Form(...)):
-    """
-    Finalize interview and synthesize bridge story
-    
-    Args:
-        interview_id: Interview session ID
-        
-    Returns:
-        Synthesized bridge story and final alignment scores
-    """
-    if interview_id not in interview_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Interview session not found"
-        )
-    
-    session = interview_sessions[interview_id]
-    
-    # Initialize interview manager
-    llm_client = create_llm_client()
-    interview_manager = InterviewManager(llm_client, vector_store)
-    
-    try:
-        # Synthesize bridge story
-        bridge_story = await interview_manager.synthesize_bridge_story(
-            conversation_history=session["conversation_history"],
-            gaps_addressed=session["gap_confidences"],
-            weighted_keywords=session["weighted_keywords"]
-        )
-        
-        # Store bridge story in session
-        session["bridge_story"] = bridge_story
-        session["completed_at"] = datetime.utcnow().isoformat()
-        
-        return {
-            "bridge_story": bridge_story,
-            "final_alignment": session["gap_confidences"],
-            "ready_for_generation": True
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error completing interview: {str(e)}"
-        )
 
 # ==================== Error Handlers ====================
 
@@ -1155,8 +1016,8 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "api:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug,
         log_level="info"
     )
