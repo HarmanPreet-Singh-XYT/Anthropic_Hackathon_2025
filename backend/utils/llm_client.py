@@ -36,7 +36,8 @@ class LLMClient:
     async def call(
         self,
         system_prompt: str,
-        user_message: str
+        user_message: str,
+        tools: Optional[list] = None
     ) -> str:
         """
         Call Anthropic API and return text response
@@ -60,20 +61,47 @@ class LLMClient:
             >>> result = json.loads(response)  # Agent parses JSON
         """
         try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                system=system_prompt,
-                messages=[
+            kwargs = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "system": system_prompt,
+                "messages": [
                     {
                         "role": "user",
                         "content": user_message
                     }
                 ]
-            )
+            }
+            
+            # Add tools if provided
+            if tools:
+                kwargs["tools"] = tools
 
-            return response.content[0].text
+            response = await self.client.messages.create(**kwargs)
+
+            # Handle tool use in response
+            # If the model wants to use a tool, we return the tool use block(s) 
+            # or the text content if no tool use.
+            # For this simple implementation, if there's a tool use, we'll return the raw content blocks
+            # and let the agent handle the loop. 
+            # BUT, to keep existing agents working, we need to return a string if it's just text.
+            
+            # Check for tool_use
+            has_tool_use = any(block.type == "tool_use" for block in response.content)
+            
+            if has_tool_use:
+                # Return the full response object or content list so the agent can parse it
+                # We'll return a special dictionary or object to signal tool use
+                return {
+                    "type": "tool_use",
+                    "content": response.content,
+                    "stop_reason": response.stop_reason
+                }
+            
+            # Default text behavior
+            text_blocks = [block.text for block in response.content if block.type == "text"]
+            return "".join(text_blocks)
 
         except Exception as e:
             raise ValueError(f"Anthropic API call failed: {str(e)}")

@@ -21,6 +21,8 @@ class Settings:
         # API Keys
         self.anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
         self.tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+        self.google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
+        self.google_cse_id: str = os.getenv("GOOGLE_CSE_ID", "")
 
         # Paths
         self.base_dir: Path = Path(__file__).parent.parent

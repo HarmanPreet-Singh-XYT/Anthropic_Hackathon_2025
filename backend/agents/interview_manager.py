@@ -31,7 +31,8 @@ class InterviewManager:
         """
         self.llm = llm_client
         self.vector_store = vector_store
-        self.confidence_threshold = 0.75  # Threshold to consider gap addressed
+        self.confidence_threshold = 0.80  # Increased threshold for higher quality
+        self.max_questions = 8  # Hard limit on questions
     
     async def start_session(
         self,
@@ -135,7 +136,8 @@ class InterviewManager:
             gap_confidences=gap_confidences,
             current_target=target_gap,
             all_gaps=all_gaps,
-            weighted_keywords=weighted_keywords
+            weighted_keywords=weighted_keywords,
+            conversation_history=conversation_history
         )
         
         # Generate response
@@ -322,7 +324,7 @@ Return ONLY a single number between 0.0 and 1.0, nothing else.
         except (ValueError, AttributeError):
             # Fallback if LLM doesn't return valid number
             # Assume moderate improvement
-            return min(1.0, current_confidence + 0.3)
+            return min(1.0, current_confidence + 0.2)
     
     async def _extract_evidence(self, answer: str, gap: str) -> str:
         """Extract key evidence/points from answer"""
@@ -350,7 +352,8 @@ Return a brief summary (1-2 sentences) of what they shared. Be specific.
         gap_confidences: Dict[str, float],
         current_target: str,
         all_gaps: List[str],
-        weighted_keywords: Dict[str, float]
+        weighted_keywords: Dict[str, float],
+        conversation_history: List[Dict[str, str]]
     ) -> Tuple[bool, Optional[str]]:
         """
         Determine if interview should continue and what gap to address next
@@ -358,6 +361,15 @@ Return a brief summary (1-2 sentences) of what they shared. Be specific.
         Returns:
             (should_continue, next_gap_name)
         """
+        # Check max questions constraint
+        # Each turn has a user message and an assistant message (usually). 
+        # We count user messages as "answers" provided.
+        user_answers = len([m for m in conversation_history if m["role"] == "user"])
+        
+        if user_answers >= self.max_questions:
+            print(f"  🛑 Max questions ({self.max_questions}) reached. Stopping interview.")
+            return (False, None)
+
         # Check if current gap is satisfied
         current_satisfied = gap_confidences[current_target] >= self.confidence_threshold
         

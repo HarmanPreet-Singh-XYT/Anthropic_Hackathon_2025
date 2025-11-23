@@ -4,7 +4,7 @@ Clean, type-safe models for scholarship intelligence
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Union
 from datetime import datetime
 
 
@@ -21,10 +21,10 @@ class EligibilityCriteria(BaseModel):
 
 class SelectionEmphasis(BaseModel):
     """What the scholarship prioritizes in selection"""
-    leadership_weight: Optional[str] = Field(None, description="Emphasis on leadership (high, medium, low)")
-    academic_weight: Optional[str] = Field(None, description="Emphasis on academics (high, medium, low)")
-    service_weight: Optional[str] = Field(None, description="Emphasis on community service (high, medium, low)")
-    financial_need_weight: Optional[str] = Field(None, description="Emphasis on financial need (high, medium, low)")
+    leadership_weight: Optional[Union[str, int]] = Field(None, description="Emphasis on leadership (high, medium, low)")
+    academic_weight: Optional[Union[str, int]] = Field(None, description="Emphasis on academics (high, medium, low)")
+    service_weight: Optional[Union[str, int]] = Field(None, description="Emphasis on community service (high, medium, low)")
+    financial_need_weight: Optional[Union[str, int]] = Field(None, description="Emphasis on financial need (high, medium, low)")
     specific_talents: List[str] = Field(default_factory=list, description="Specific talents or skills valued")
     other_factors: List[str] = Field(default_factory=list, description="Other selection factors")
 
@@ -52,9 +52,9 @@ class OfficialScholarshipData(BaseModel):
 
     # Core values for Decoder agent
     primary_values: List[str] = Field(
-        min_length=3,
-        max_length=7,
-        description="Top 5-7 qualities the scholarship seeks"
+        min_length=1,
+        max_length=10,
+        description="Top qualities the scholarship seeks"
     )
     implicit_values: List[str] = Field(
         default_factory=list,

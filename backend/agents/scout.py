@@ -29,7 +29,7 @@ from utils.llm_client import LLMClient, create_llm_client
 
 VALIDATION_THRESHOLD = 0.7
 MAX_VALIDATION_CONCURRENCY = 5
-MIN_CONTENT_LENGTH = 100
+MIN_CONTENT_LENGTH = 1000
 SOCIAL_MEDIA_EXCLUSIONS = "-reddit -linkedin -facebook -twitter -instagram -tiktok"
 
 
@@ -66,35 +66,43 @@ class ScoutAgent:
             Cleaned Markdown string
         """
         try:
-            headers = {'User-Agent': self.ua.random}
-            response = requests.get(url, headers=headers, timeout=15)
+            # Use Jina Reader for better scraping (handles JS/SPA)
+            jina_url = f"https://r.jina.ai/{url}"
+            headers = {
+                'User-Agent': self.ua.random,
+                'X-Target-Selector': 'body' # Optional: target specific element
+            }
+            
+            print(f"    [INFO] Fetching via Jina Reader: {jina_url}")
+            response = requests.get(jina_url, headers=headers, timeout=30)
             response.raise_for_status()
             
-            # Parse HTML
-            soup = BeautifulSoup(response.text, 'lxml')
+            # Jina returns markdown directly
+            markdown = response.text
             
-            # Denoise: Remove unwanted elements
-            for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form', 'iframe', 'noscript', 'svg', 'canvas']):
-                tag.decompose()
+            # Basic cleanup
+            if "Title:" in markdown[:100]:
+                # Jina often adds metadata at top, keep it as it's useful
+                pass
                 
-            # Remove elements by class/id (heuristic)
-            for tag in soup.find_all(attrs={"class": re.compile(r"(ad|popup|cookie|sidebar|social|share|comment|widget)", re.I)}):
-                tag.decompose()
-            for tag in soup.find_all(attrs={"id": re.compile(r"(ad|popup|cookie|sidebar|social|share|comment|widget)", re.I)}):
-                tag.decompose()
-
-            # Convert to Markdown
-            # heading_style="ATX" ensures # headings
-            markdown = markdownify.markdownify(str(soup), heading_style="ATX", strip=['a', 'img'])
-            
-            # Clean up excessive newlines
-            markdown = re.sub(r'\n{3,}', '\n\n', markdown).strip()
-            
             return markdown
             
         except Exception as e:
-            print(f"    [ERROR] Fetch failed for {url}: {e}")
-            return ""
+            print(f"    [ERROR] Jina Fetch failed for {url}: {e}")
+            # Fallback to direct requests (unlikely to work for SPA but good safety)
+            try:
+                print(f"    [INFO] Falling back to direct requests...")
+                headers = {'User-Agent': self.ua.random}
+                response = requests.get(url, headers=headers, timeout=15)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'lxml')
+                for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form', 'iframe', 'noscript', 'svg', 'canvas']):
+                    tag.decompose()
+                markdown = markdownify.markdownify(str(soup), heading_style="ATX", strip=['a', 'img'])
+                return re.sub(r'\n{3,}', '\n\n', markdown).strip()
+            except Exception as e2:
+                print(f"    [ERROR] Direct fetch also failed: {e2}")
+                return ""
 
     async def _extract_official_data(self, markdown: str, url: str) -> OfficialScholarshipData:
         """Use LLM to extract structured data from official page markdown"""
@@ -176,16 +184,76 @@ OUTPUT ONLY THE JSON, NO EXPLANATION.
 
     async def scrape_official_page(self, url: str) -> OfficialScholarshipData:
         """
-        Scrape official scholarship page using custom pipeline
+        Scrape official scholarship page using robust fallback chain:
+        1. Try Jina Reader (handles JS/SPA)
+        2. If fails or too short, use Google Search snippets
+        3. If all fails, return minimal fallback
         """
         print(f"  → Extracting scholarship data from: {url}")
         
-        # 1. Fetch & Clean
-        markdown = await asyncio.to_thread(self._fetch_and_clean, url)
+        markdown = ""
         
+        # Step 1: Try Jina Reader for JS/SPA content
+        try:
+            jina_url = f"https://r.jina.ai/{url}"
+            headers = {'User-Agent': self.ua.random}
+            
+            print(f"    [INFO] Fetching via Jina Reader...")
+            response = requests.get(jina_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            markdown = response.text
+            
+            print(f"    ✓ Jina fetched {len(markdown)} chars")
+            
+            # Validate content relevance - check for key terms
+            # If it's just nav links, it won't have these
+            key_terms = ["criteria", "requirement", "eligibility", "qualification", "selection", "apply", "deadline"]
+            found_terms = [term for term in key_terms if term in markdown.lower()]
+            
+            if len(found_terms) < 2:
+                print(f"    ⚠ Content lacks key terms (found {found_terms}). Treating as insufficient.")
+                markdown = "" # Force fallback
+            else:
+                print(f"    ✓ Content seems relevant (found {len(found_terms)} key terms)")
+            
+        except Exception as e:
+            print(f"    [ERROR] Jina fetch failed: {e}")
+        
+        # Step 2: If Jina failed or content too short, try Google Search snippets
         if not markdown or len(markdown) < MIN_CONTENT_LENGTH:
-            print("  ⚠ Failed to fetch content or content too short")
-            # Return minimal fallback
+            print(f"    ⚠ Jina content insufficient ({len(markdown)} chars < {MIN_CONTENT_LENGTH})")
+            print(f"    → Attempting Google Search fallback...")
+            
+            try:
+                # Guess scholarship name from URL
+                name_guess = url.split("/")[-1].replace("-", " ").title()
+                query = f"{name_guess} scholarship requirements review criteria eligibility"
+                
+                print(f"    → Searching for: '{query}'")
+                results = await self._run_google_search(query=query, limit=10)
+                
+                if results:
+                    print(f"    ✓ Found {len(results)} search results")
+                    snippet_markdown = ""
+                    for res in results:
+                        desc = getattr(res, "description", "")
+                        if desc:
+                            snippet_markdown += f"\n# Source: {res.title}\n{desc}\n"
+                    
+                    if len(snippet_markdown) > 300:
+                        markdown = snippet_markdown
+                    else:
+                        pass
+                    
+                else:
+                    print(f"    ⚠ No search results found")
+                    
+            except Exception as e:
+                print(f"    [ERROR] Google Search fallback failed: {e}")
+        
+        # Step 3: If still no content, return minimal fallback
+        if not markdown or len(markdown) < 100:
+            print("    ❌ All scraping methods failed")
             return OfficialScholarshipData(
                 scholarship_name="Unknown Scholarship",
                 primary_values=["Leadership", "Service", "Academic Excellence"],
@@ -193,11 +261,12 @@ OUTPUT ONLY THE JSON, NO EXPLANATION.
                 eligibility_criteria=EligibilityCriteria(),
                 source_url=url
             )
-            
-        # 2. Extract with LLM
+        
+        # Extract data with LLM
+        print(f"    → Extracting with LLM from {len(markdown)} chars...")
         official_data = await self._extract_official_data(markdown, url)
         
-        print(f"  ✓ Extracted: {official_data.scholarship_name}")
+        print(f"    ✓ Extracted: {official_data.scholarship_name}")
         return official_data
 
     async def _run_google_search(self, *, query: str, limit: int) -> List[Any]:
@@ -311,8 +380,8 @@ OUTPUT JSON ONLY.
             
             # Additional check: skip if content looks like binary/PDF data
             if content.startswith('%PDF') or '\\x00' in content[:100]:
-                if debug:
-                    print(f"      [DEBUG] Skipping binary content from {url}")
+                # if debug:
+                #    print(f"      [DEBUG] Skipping binary content from {url}")
                 return None
 
             # 2. Validate with LLM

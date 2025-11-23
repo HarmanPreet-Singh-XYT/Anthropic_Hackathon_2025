@@ -304,7 +304,7 @@ export default function AIHelpPage() {
     }
 
     return (
-        <div className="min-h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative">
+        <div className="h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative">
 
             <ParticleBackground />
 

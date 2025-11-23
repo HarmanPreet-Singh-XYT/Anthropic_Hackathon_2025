@@ -9,6 +9,7 @@ from pathlib import Path
 
 from utils.llm_client import LLMClient
 from utils.prompt_loader import load_prompt
+from tools.google_search import GoogleSearchTool
 
 
 class InterviewerAgent:
@@ -26,6 +27,7 @@ class InterviewerAgent:
         """
         self.llm_client = llm_client
         self.system_prompt = self._load_prompt()
+        self.search_tool = GoogleSearchTool()
 
     def _load_prompt(self) -> str:
         """
@@ -159,19 +161,58 @@ Output ONLY the focus description, no additional text."""
                 }
             )
             
-            # Call LLM
-            system_instruction = """You are a helpful mentor conducting a warm, conversational interview.
-Generate a single, specific question that references the student's actual experiences.
-DO NOT use placeholders like [briefly highlight...] or [mention experience].
-Output ONLY the question, no preamble."""
-            
-            response_text = await self.llm_client.call(
-                system_prompt=system_instruction,
-                user_message=full_prompt
+            # Call LLM with tool support
+            # Combined prompt: Warm/Conversational (from HEAD) + Tool usage (from Scout)
+            system_instruction = (
+                "You are a helpful mentor conducting a warm, conversational interview. "
+                "Generate a single, specific question that references the student's actual experiences. "
+                "DO NOT use placeholders like [briefly highlight...] or [mention experience]. "
+                "You have access to Google Search to verify information or get context about specific organizations/topics mentioned. "
+                "Use the tool if you need to understand a specific scholarship requirement or organization better before asking."
             )
+            
+            tools = [self.search_tool.tool_definition] if self.search_tool.service else None
+            
+            # Tool use loop
+            response = await self.llm_client.call(
+                system_prompt=system_instruction,
+                user_message=full_prompt,
+                tools=tools
+            )
+            
+            # Handle tool use
+            if isinstance(response, dict) and response.get("type") == "tool_use":
+                # Execute tool
+                tool_use_block = next(b for b in response["content"] if b.type == "tool_use")
+                tool_name = tool_use_block.name
+                tool_input = tool_use_block.input
+                
+                if tool_name == "google_search":
+                    search_result = await self.search_tool.execute(**tool_input)
+                    
+                    follow_up_prompt = (
+                        f"{full_prompt}\n\n"
+                        f"[System: You decided to search for '{tool_input.get('query')}'. "
+                        f"Here are the results:]\n{search_result}\n\n"
+                        f"Now, generate the interview question based on this context."
+                    )
+                    
+                    # Second call (no tools this time to force a question)
+                    response_text = await self.llm_client.call(
+                        system_prompt=system_instruction,
+                        user_message=follow_up_prompt
+                    )
+                    
+                    if isinstance(response_text, dict):
+                        question = "Can you tell me more about your experience?"
+                    else:
+                        question = response_text.strip()
+                else:
+                    question = "Can you tell me more about that?"
+            else:
+                question = response.strip()
 
-            # Clean up response
-            question = response_text.strip()
+            # Clean up response (remove quotes if present)
             if question.startswith('"') and question.endswith('"'):
                 question = question[1:-1]
             
