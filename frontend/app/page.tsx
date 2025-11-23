@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Moon, Sun, Brain, PenTool, Target, Zap,
-  CheckCircle, ArrowRight, Github, Play, Layers,
+  CheckCircle, ArrowRight, Github, Play,
   UploadCloud, FileText, Sparkles, User,
   BarChart3, RefreshCw, GraduationCap,
   ShieldCheck,
@@ -25,41 +25,55 @@ const App = () => {
   const toggleTheme = () => toggleDarkMode();
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-blue-500 selection:text-white ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500 selection:text-white overflow-x-hidden">
 
-      {/* BACKGROUND GRID ANIMATION */}
+      {/* STAR PARTICLES BACKGROUND */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className={`absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] ${darkMode ? 'opacity-20' : 'opacity-100'}`}></div>
-        <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-blue-500 opacity-20 blur-[100px]"></div>
-        <div className="absolute right-0 bottom-0 -z-10 h-[310px] w-[310px] rounded-full bg-purple-500 opacity-20 blur-[100px]"></div>
+        {/* Star particles */}
+        {[...Array(50)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-white rounded-full animate-pulse"
+            style={{
+              top: `${Math.random() * 100}%`,
+              left: `${Math.random() * 100}%`,
+              opacity: Math.random() * 0.5 + 0.1,
+              animationDelay: `${Math.random() * 3}s`,
+              animationDuration: `${Math.random() * 3 + 2}s`
+            }}
+          />
+        ))}
+        {/* Subtle glow effects */}
+        <div className="absolute left-1/4 top-0 -z-10 h-[400px] w-[400px] rounded-full bg-white/5 blur-[120px]"></div>
+        <div className="absolute right-1/4 bottom-0 -z-10 h-[400px] w-[400px] rounded-full bg-white/5 blur-[120px]"></div>
       </div>
 
       {/* Navigation */}
-      <nav className="fixed w-full z-50 backdrop-blur-xl bg-white/70 dark:bg-slate-950/70 border-b border-slate-200/50 dark:border-slate-800/50 transition-all duration-300">
+      <nav className="fixed w-full z-50 backdrop-blur-xl bg-black/50 border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
-              <div className="bg-gradient-to-tr from-blue-600 to-purple-600 p-2 rounded-lg shadow-lg shadow-blue-500/20">
+              <div className="bg-white/10 p-2 rounded-lg border border-white/20">
                 <Brain className="w-5 h-5 text-white" />
               </div>
-              <span className="font-bold text-xl tracking-tight">Scholar<span className="text-blue-600 dark:text-blue-400">Match</span></span>
+              <span className="font-bold text-xl tracking-tight text-white">ScholarMatch</span>
             </div>
 
             <div className="hidden md:flex items-center space-x-8 font-medium text-sm">
-              <a href="#how-it-works" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Process</a>
-              <a href="/start" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Live Demo</a>
-              <a href="/outreach" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Outreach</a>
-              <a href="#features" className="opacity-70 hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-all">Features</a>
+              <a href="#how-it-works" className="text-white/60 hover:text-white transition-all">Process</a>
+              <a href="/start" className="text-white/60 hover:text-white transition-all">Live Demo</a>
+              <a href="/outreach" className="text-white/60 hover:text-white transition-all">Outreach</a>
+              <a href="#features" className="text-white/60 hover:text-white transition-all">Features</a>
             </div>
 
             <div className="flex items-center gap-4">
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                className="p-2 rounded-full hover:bg-white/5 transition-colors"
               >
-                {darkMode ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+                {darkMode ? <Sun className="w-5 h-5 text-white/60" /> : <Moon className="w-5 h-5 text-white/60" />}
               </button>
-              <a href='/start' className="hidden sm:flex bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-2.5 rounded-full font-bold text-sm transition-all hover:scale-105 hover:shadow-lg active:scale-95 items-center gap-2">
+              <a href='/start' className="hidden sm:flex bg-white text-black px-5 py-2.5 rounded-full font-bold text-sm transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/20 active:scale-95 items-center gap-2">
                 Try it out <ArrowRight className="w-4 h-4" />
               </a>
             </div>
@@ -68,54 +82,53 @@ const App = () => {
       </nav>
 
       {/* HERO SECTION */}
-      <section className="relative pt-16 pb-16 lg:pt-32 lg:pb-24 overflow-hidden">
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center text-center">
+      <section className="relative pt-32 pb-24 lg:pt-48 lg:pb-32 min-h-screen flex items-center">
+        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center text-center">
 
           {/* Badge */}
-          <div className="animate-fade-in-up inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-slate-200 dark:border-slate-800 text-sm font-semibold mb-8 shadow-sm hover:shadow-md transition-shadow cursor-default">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-sm font-medium mb-12 hover:bg-white/10 transition-all">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/50 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-white/70"></span>
             </span>
-            <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent font-bold">Agentiiv Hackathon 2025</span>
-            <span className="text-slate-400">|</span>
-            <span className="text-slate-600 dark:text-slate-300">Team</span>
+            <span className="text-white/90 font-semibold">Agentiiv Hackathon 2025</span>
+            <span className="text-white/30">|</span>
+            <span className="text-white/60">Team</span>
           </div>
 
           {/* Headline */}
-          <h1 className="animate-fade-in-up text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 leading-[1.1]">
-            Don't just apply. <br className="hidden md:block" />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 animate-gradient-x">
+          <h1 className="text-6xl md:text-7xl lg:text-8xl font-black tracking-tight mb-8 leading-[1.05]">
+            Don't just apply.<br />
+            <span className="text-white italic">
               Command the Room.
             </span>
           </h1>
 
-          <p className="animate-fade-in-up delay-100 mt-0 max-w-2xl mx-auto text-xl text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+          <p className="mt-6 max-w-2xl mx-auto text-lg md:text-xl text-white/70 leading-relaxed">
             The first AI that decodes scholarship "personalities." We adapt your story to match the hidden values of any committee, instantly.
           </p>
 
           {/* CTA Buttons */}
-          <div className="animate-fade-in-up delay-200 mt-10 flex flex-col sm:flex-row gap-4 w-full justify-center">
-            <a href='/start' className="group relative flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]">
-              <div className="absolute inset-0 rounded-2xl bg-white/20 blur opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="mt-12 flex flex-col sm:flex-row gap-4 w-full justify-center">
+            <a href='/start' className="group relative flex items-center justify-center gap-3 bg-white hover:bg-white/90 text-black px-8 py-4 rounded-full font-semibold text-base shadow-lg shadow-white/10 transition-all hover:shadow-white/20 hover:shadow-xl">
               <Play className="w-5 h-5 fill-current" /> Launch Live Demo
             </a>
-            <a href='https://github.com/Elliot-Sones/Anthropic_Hack' className="flex items-center justify-center gap-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-900 dark:text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-sm transition-all hover:scale-[1.02]">
+            <a href='https://github.com/Elliot-Sones/Anthropic_Hack' className="flex items-center justify-center gap-2 bg-white/5 backdrop-blur-sm border border-white/20 hover:bg-white/10 hover:border-white/30 text-white px-8 py-4 rounded-full font-semibold text-base transition-all">
               <Github className="w-5 h-5" /> View Repo
             </a>
           </div>
 
           {/* INTERACTIVE MOCKUP COMPONENT */}
-          <div className="mt-20 w-full max-w-5xl mx-auto animate-fade-in-up delay-300">
-            <div className="relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+          <div className="mt-24 w-full max-w-5xl mx-auto">
+            <div className="relative rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl shadow-black/50 overflow-hidden">
               {/* Fake Browser Header */}
-              <div className="h-10 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center px-4 gap-2">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              <div className="h-12 border-b border-white/5 bg-black/60 flex items-center px-6 gap-3">
+                <div className="flex gap-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                  <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
                 </div>
-                <div className="ml-4 px-3 py-1 bg-white dark:bg-slate-800 rounded-md text-xs text-slate-400 flex items-center gap-2 flex-1 max-w-sm">
+                <div className="ml-4 px-4 py-1.5 bg-white/5 rounded-lg text-xs text-white/50 flex items-center gap-2 flex-1 max-w-sm">
                   <Target className="w-3 h-3" /> scholarmatch.ai/engine/active
                 </div>
               </div>
@@ -124,34 +137,34 @@ const App = () => {
               <div className="grid md:grid-cols-12 min-h-[500px]">
 
                 {/* Sidebar Navigation */}
-                <div className="md:col-span-3 border-r border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="md:col-span-3 border-r border-white/5 p-6 bg-black/20">
                   <div className="space-y-2">
                     <button
                       onClick={() => setActiveTab('input')}
-                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'input' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'}`}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'input' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-lg shadow-blue-500/20' : 'hover:bg-white/5 text-white/50 hover:text-white/80'}`}
                     >
                       <User className="w-4 h-4" /> Profile & Link
                     </button>
                     <button
                       onClick={() => setActiveTab('analysis')}
-                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'analysis' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'}`}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'analysis' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30 shadow-lg shadow-purple-500/20' : 'hover:bg-white/5 text-white/50 hover:text-white/80'}`}
                     >
                       <Brain className="w-4 h-4" /> AI Analysis
                     </button>
                     <button
                       onClick={() => setActiveTab('draft')}
-                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'draft' ? 'bg-green-600 text-white shadow-lg shadow-green-500/30' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500'}`}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'draft' ? 'bg-green-600/20 text-green-400 border border-green-500/30 shadow-lg shadow-green-500/20' : 'hover:bg-white/5 text-white/50 hover:text-white/80'}`}
                     >
                       <FileText className="w-4 h-4" /> Final Draft
                     </button>
                   </div>
 
-                  <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
-                    <p className="text-xs text-blue-600 dark:text-blue-300 font-bold mb-1">LIVE STATUS</p>
-                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                  <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/10">
+                    <p className="text-xs text-blue-400 font-semibold mb-2">LIVE STATUS</p>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400"></span>
                       </span>
                       System Ready
                     </div>
@@ -159,29 +172,29 @@ const App = () => {
                 </div>
 
                 {/* Main Content Area - Dynamic based on Tab */}
-                <div className="md:col-span-9 p-8 bg-white dark:bg-slate-950 relative">
+                <div className="md:col-span-9 p-8 bg-black/30 relative">
 
                   {activeTab === 'input' && (
-                    <div className="animate-fade-in space-y-6">
+                    <div className="space-y-6">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-bold">Scholarship Target</h3>
-                        <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-slate-500">Step 1 of 3</span>
+                        <h3 className="text-xl font-bold text-white">Scholarship Target</h3>
+                        <span className="text-xs bg-white/5 px-3 py-1 rounded-full text-white/50 border border-white/10">Step 1 of 3</span>
                       </div>
 
                       <div className="space-y-4">
-                        <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors cursor-pointer group">
-                          <div className="w-12 h-12 bg-blue-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                            <UploadCloud className="w-6 h-6 text-blue-500" />
+                        <div className="border border-dashed border-white/20 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-white/5 hover:border-white/30 transition-all cursor-pointer group">
+                          <div className="w-12 h-12 bg-blue-600/20 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform border border-blue-500/30">
+                            <UploadCloud className="w-6 h-6 text-blue-400" />
                           </div>
-                          <p className="font-medium">Upload Student Profile (PDF/DOCX)</p>
-                          <p className="text-sm text-slate-400">Drag and drop or click to browse</p>
+                          <p className="font-medium text-white">Upload Student Profile (PDF/DOCX)</p>
+                          <p className="text-sm text-white/50">Drag and drop or click to browse</p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium mb-2 text-slate-600 dark:text-slate-400">Scholarship URL</label>
+                          <label className="block text-sm font-medium mb-2 text-white/70">Scholarship URL</label>
                           <div className="flex gap-2">
-                            <input type="text" value="https://foundation.org/grants/innovation-2025" readOnly className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-500 text-sm" />
-                            <button onClick={() => setActiveTab('analysis')} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold hover:opacity-90">Scan</button>
+                            <input type="text" value="https://foundation.org/grants/innovation-2025" readOnly className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white/50 text-sm" />
+                            <button onClick={() => setActiveTab('analysis')} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all">Scan</button>
                           </div>
                         </div>
                       </div>
@@ -189,59 +202,59 @@ const App = () => {
                   )}
 
                   {activeTab === 'analysis' && (
-                    <div className="animate-fade-in space-y-6">
+                    <div className="space-y-6">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-bold">Decoding Priorities</h3>
-                        <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
+                        <h3 className="text-xl font-bold text-white">Decoding Priorities</h3>
+                        <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="col-span-2 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <div className="col-span-2 p-4 bg-white/5 rounded-xl border border-white/10">
                           <div className="flex justify-between text-sm mb-2">
-                            <span className="font-bold text-slate-700 dark:text-slate-300">Detected Theme: Innovation & Risk</span>
-                            <span className="text-green-500 font-mono">98% Match</span>
+                            <span className="font-semibold text-white">Detected Theme: Innovation & Risk</span>
+                            <span className="text-green-400 font-mono font-semibold">98% Match</span>
                           </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2">
-                            <div className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full w-[98%] animate-pulse"></div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full w-[98%] shadow-lg shadow-blue-500/30"></div>
                           </div>
                         </div>
 
-                        <div className="p-4 rounded-xl border border-red-100 dark:border-red-900/30 bg-red-50 dark:bg-red-900/10">
-                          <p className="text-xs text-red-500 font-bold uppercase mb-1">De-Emphasize</p>
-                          <p className="text-sm font-medium">Standard GPA & Class Attendance</p>
+                        <div className="p-4 rounded-xl border border-red-500/30 bg-red-600/10">
+                          <p className="text-xs text-red-400 font-semibold uppercase mb-1">De-Emphasize</p>
+                          <p className="text-sm font-medium text-white/90">Standard GPA & Class Attendance</p>
                         </div>
-                        <div className="p-4 rounded-xl border border-green-100 dark:border-green-900/30 bg-green-50 dark:bg-green-900/10">
-                          <p className="text-xs text-green-600 font-bold uppercase mb-1">Hyper-Focus</p>
-                          <p className="text-sm font-medium">"Robotics Club Failure & Pivot"</p>
+                        <div className="p-4 rounded-xl border border-green-500/30 bg-green-600/10">
+                          <p className="text-xs text-green-400 font-semibold uppercase mb-1">Hyper-Focus</p>
+                          <p className="text-sm font-medium text-white/90">"Robotics Club Failure & Pivot"</p>
                         </div>
                       </div>
 
                       <div className="flex justify-end mt-4">
-                        <button onClick={() => setActiveTab('draft')} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20">Generate Draft &rarr;</button>
+                        <button onClick={() => setActiveTab('draft')} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg text-sm font-semibold shadow-lg shadow-purple-500/30 transition-all">Generate Draft &rarr;</button>
                       </div>
                     </div>
                   )}
 
                   {activeTab === 'draft' && (
-                    <div className="animate-fade-in h-full flex flex-col">
+                    <div className="h-full flex flex-col">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-bold flex items-center gap-2">
-                          <Sparkles className="w-4 h-4 text-yellow-500" /> Tailored Essay
+                        <h3 className="text-xl font-bold flex items-center gap-2 text-white">
+                          <Sparkles className="w-5 h-5 text-yellow-400" /> Tailored Essay
                         </h3>
                         <div className="flex gap-2">
-                          <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs font-bold rounded">Optimized</span>
+                          <span className="px-3 py-1 bg-green-600/20 border border-green-500/30 text-green-400 text-xs font-semibold rounded-full">Optimized</span>
                         </div>
                       </div>
 
-                      <div className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 font-serif leading-relaxed text-slate-700 dark:text-slate-300 text-sm overflow-y-auto max-h-[300px] shadow-inner">
+                      <div className="flex-1 bg-white/5 border border-white/10 rounded-xl p-6 font-serif leading-relaxed text-white/90 text-sm overflow-y-auto max-h-[300px]">
                         <p className="mb-4">
-                          <span className="bg-yellow-200 dark:bg-yellow-900/50 text-slate-900 dark:text-white px-1 rounded">Innovation isn't about the awards on a shelf; it's about the prototypes in the trash bin.</span> That is a lesson I learned not in the classroom, but at 2 AM in the robotics lab...
+                          <span className="bg-yellow-500/20 border-b-2 border-yellow-500/50 text-white px-1">Innovation isn't about the awards on a shelf; it's about the prototypes in the trash bin.</span> That is a lesson I learned not in the classroom, but at 2 AM in the robotics lab...
                         </p>
                         <p>
-                          While my transcript shows a 3.8 GPA, it doesn't capture the three months I spent debugging a LIDAR sensor for our community drone project. This aligns with the <span className="font-bold">Future Innovators Foundation's</span> mission to support persistence over perfection...
+                          While my transcript shows a 3.8 GPA, it doesn't capture the three months I spent debugging a LIDAR sensor for our community drone project. This aligns with the <span className="font-bold text-blue-400">Future Innovators Foundation's</span> mission to support persistence over perfection...
                         </p>
-                        <div className="h-4 w-3/4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse mt-4"></div>
-                        <div className="h-4 w-1/2 bg-slate-200 dark:bg-slate-800 rounded animate-pulse mt-2"></div>
+                        <div className="h-4 w-3/4 bg-white/10 rounded animate-pulse mt-4"></div>
+                        <div className="h-4 w-1/2 bg-white/10 rounded animate-pulse mt-2"></div>
                       </div>
                     </div>
                   )}
@@ -254,27 +267,27 @@ const App = () => {
       </section>
 
       {/* SOCIAL PROOF MARQUEE */}
-      <section className="py-10 border-y border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-hidden">
-        <p className="text-center text-xs font-bold uppercase tracking-widest text-slate-400 mb-6">Optimized for opportunities at</p>
-        <div className="flex gap-16 animate-marquee whitespace-nowrap opacity-60 grayscale hover:grayscale-0 transition-all duration-500 justify-center">
+      <section className="py-16 border-y border-white/5 bg-black overflow-hidden">
+        <p className="text-center text-xs font-semibold uppercase tracking-widest text-white/40 mb-8">Trusted by students at</p>
+        <div className="flex gap-16 whitespace-nowrap opacity-50 hover:opacity-70 transition-opacity duration-500 justify-center">
           {['Stanford University', 'MIT Media Lab', 'Rhodes Trust', 'Gates Foundation', 'National Science Foundation', 'Fulbright Program'].map((org, i) => (
-            <div key={i} className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-200">
-              <GraduationCap className="w-6 h-6" /> {org}
+            <div key={i} className="flex items-center gap-2 text-lg font-semibold text-white/60">
+              <GraduationCap className="w-5 h-5" /> {org}
             </div>
           ))}
         </div>
       </section>
 
       {/* REFINED: HOW IT WORKS (The Processing Pipeline) */}
-      <section id="how-it-works" className="py-24 bg-slate-50 dark:bg-slate-900/50 relative overflow-hidden">
+      <section id="how-it-works" className="py-32 bg-black relative overflow-hidden">
 
         {/* Background Elements */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-full bg-gradient-to-b from-transparent via-blue-200 dark:via-blue-900/50 to-transparent hidden md:block"></div>
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-full bg-gradient-to-b from-transparent via-blue-500/20 to-transparent hidden md:block"></div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-bold mb-6">From Resume to <span className="text-blue-600 dark:text-blue-400">Winner</span></h2>
-            <p className="text-slate-600 dark:text-slate-400 text-lg max-w-2xl mx-auto">
+          <div className="text-center mb-24">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white">From Resume to <span className="text-blue-400">Winner</span></h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
               A 3-stage RAG pipeline that transforms raw data into a hyper-targeted narrative.
             </p>
           </div>
@@ -285,69 +298,69 @@ const App = () => {
             <div className="flex flex-col md:flex-row items-center gap-8 relative">
               {/* Number/Icon Node */}
               <div className="md:w-1/2 flex justify-end md:pr-12 order-2 md:order-1">
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-md relative group hover:-translate-y-1 transition-transform duration-300">
-                  <div className="absolute top-0 right-0 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-xl">STEP 01</div>
+                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-white/10 w-full max-w-md relative group hover:bg-white/10 hover:border-white/20 transition-all duration-300">
+                  <div className="absolute top-0 right-0 bg-blue-600/20 text-blue-400 text-xs font-semibold px-3 py-1 rounded-bl-lg rounded-tr-xl border-l border-b border-blue-500/30">STEP 01</div>
                   <div className="flex items-center gap-4 mb-4">
-                    <div className="p-3 bg-blue-50 dark:bg-slate-800 rounded-lg">
-                      <UploadCloud className="w-6 h-6 text-blue-600" />
+                    <div className="p-3 bg-blue-600/20 rounded-lg border border-blue-500/30">
+                      <UploadCloud className="w-6 h-6 text-blue-400" />
                     </div>
-                    <h3 className="text-xl font-bold">Dual-Source Ingestion</h3>
+                    <h3 className="text-xl font-bold text-white">Dual-Source Ingestion</h3>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400 text-sm mb-4 leading-relaxed">
+                  <p className="text-white/70 text-sm mb-4 leading-relaxed">
                     We ingest your static Student Profile (PDF/CV) and simultaneously scrape the live Scholarship URL.
                   </p>
                   {/* Micro-tasks */}
-                  <div className="bg-slate-50 dark:bg-slate-950 rounded-lg p-3 space-y-2 border border-slate-100 dark:border-slate-800">
+                  <div className="bg-black/40 rounded-lg p-3 space-y-2 border border-white/5">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> PDF Parsing</span>
-                      <span className="text-slate-400 font-mono">DONE</span>
+                      <span className="text-white/60 flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-400" /> PDF Parsing</span>
+                      <span className="text-white/40 font-mono">DONE</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> URL Scraping</span>
-                      <span className="text-slate-400 font-mono">DONE</span>
+                      <span className="text-white/60 flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-400" /> URL Scraping</span>
+                      <span className="text-white/40 font-mono">DONE</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Center Dot */}
-              <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-blue-600 rounded-full border-4 border-white dark:border-slate-900 z-20 hidden md:block shadow-[0_0_15px_rgba(37,99,235,0.5)]"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-blue-500 rounded-full border-4 border-black z-20 hidden md:block shadow-[0_0_20px_rgba(59,130,246,0.6)]"></div>
 
               <div className="md:w-1/2 order-1 md:order-2 md:pl-12 hidden md:block">
-                <span className="text-6xl font-black text-slate-200 dark:text-slate-800 select-none">01</span>
+                <span className="text-6xl font-black text-white/5 select-none">01</span>
               </div>
             </div>
 
             {/* STAGE 2: PROCESSING */}
             <div className="flex flex-col md:flex-row items-center gap-8 relative">
               <div className="md:w-1/2 flex justify-end md:pr-12 hidden md:block">
-                <span className="text-6xl font-black text-slate-200 dark:text-slate-800 select-none">02</span>
+                <span className="text-6xl font-black text-white/5 select-none">02</span>
               </div>
 
               {/* Center Dot */}
-              <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-purple-600 rounded-full border-4 border-white dark:border-slate-900 z-20 hidden md:block shadow-[0_0_15px_rgba(147,51,234,0.5)]"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-purple-500 rounded-full border-4 border-black z-20 hidden md:block shadow-[0_0_20px_rgba(168,85,247,0.6)]"></div>
 
               {/* Card */}
               <div className="md:w-1/2 md:pl-12">
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-xl border border-purple-500/30 w-full max-w-md relative group hover:-translate-y-1 transition-transform duration-300">
-                  <div className="absolute top-0 right-0 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-xl">STEP 02</div>
+                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-purple-500/30 w-full max-w-md relative group hover:bg-white/10 hover:border-purple-500/50 transition-all duration-300">
+                  <div className="absolute top-0 right-0 bg-purple-600/20 text-purple-400 text-xs font-semibold px-3 py-1 rounded-bl-lg rounded-tr-xl border-l border-b border-purple-500/30">STEP 02</div>
                   <div className="flex items-center gap-4 mb-4">
-                    <div className="p-3 bg-purple-50 dark:bg-slate-800 rounded-lg">
-                      <Brain className="w-6 h-6 text-purple-600" />
+                    <div className="p-3 bg-purple-600/20 rounded-lg border border-purple-500/30">
+                      <Brain className="w-6 h-6 text-purple-400" />
                     </div>
-                    <h3 className="text-xl font-bold">Semantic Mapping</h3>
+                    <h3 className="text-xl font-bold text-white">Semantic Mapping</h3>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400 text-sm mb-4 leading-relaxed">
+                  <p className="text-white/70 text-sm mb-4 leading-relaxed">
                     Our "Adaptive Weighting" engine compares your history against the scholarship's hidden values using vector embeddings.
                   </p>
 
                   {/* Visualization of processing */}
                   <div className="flex gap-1 h-1.5 w-full mb-2">
-                    <div className="h-full w-1/3 bg-purple-400 rounded-full animate-pulse"></div>
-                    <div className="h-full w-1/3 bg-purple-300 rounded-full animate-pulse delay-75"></div>
-                    <div className="h-full w-1/3 bg-purple-200 rounded-full animate-pulse delay-150"></div>
+                    <div className="h-full w-1/3 bg-purple-500 rounded-full animate-pulse shadow-lg shadow-purple-500/30"></div>
+                    <div className="h-full w-1/3 bg-purple-400 rounded-full animate-pulse delay-75"></div>
+                    <div className="h-full w-1/3 bg-purple-300 rounded-full animate-pulse delay-150"></div>
                   </div>
-                  <p className="text-xs text-purple-600 dark:text-purple-400 font-mono text-center">Identifying "Win Themes"...</p>
+                  <p className="text-xs text-purple-400 font-mono text-center">Identifying "Win Themes"...</p>
                 </div>
               </div>
             </div>
@@ -355,26 +368,26 @@ const App = () => {
             {/* STAGE 3: GENERATION */}
             <div className="flex flex-col md:flex-row items-center gap-8 relative">
               <div className="md:w-1/2 flex justify-end md:pr-12 order-2 md:order-1">
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-md relative group hover:-translate-y-1 transition-transform duration-300">
-                  <div className="absolute top-0 right-0 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-xl">STEP 03</div>
+                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-white/10 w-full max-w-md relative group hover:bg-white/10 hover:border-white/20 transition-all duration-300">
+                  <div className="absolute top-0 right-0 bg-green-600/20 text-green-400 text-xs font-semibold px-3 py-1 rounded-bl-lg rounded-tr-xl border-l border-b border-green-500/30">STEP 03</div>
                   <div className="flex items-center gap-4 mb-4">
-                    <div className="p-3 bg-green-50 dark:bg-slate-800 rounded-lg">
-                      <PenTool className="w-6 h-6 text-green-600" />
+                    <div className="p-3 bg-green-600/20 rounded-lg border border-green-500/30">
+                      <PenTool className="w-6 h-6 text-green-400" />
                     </div>
-                    <h3 className="text-xl font-bold">Strategic Drafting</h3>
+                    <h3 className="text-xl font-bold text-white">Strategic Drafting</h3>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400 text-sm mb-4 leading-relaxed">
+                  <p className="text-white/70 text-sm mb-4 leading-relaxed">
                     The LLM generates a unique essay that emphasizes the traits this specific committee cares about most.
                   </p>
 
                   {/* Mock File Output */}
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-                    <FileText className="w-8 h-8 text-slate-400" />
+                  <div className="flex items-center gap-3 bg-black/40 p-3 rounded-lg border border-white/5">
+                    <FileText className="w-8 h-8 text-white/40" />
                     <div>
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Final_Draft_v1.docx</p>
+                      <p className="text-sm font-semibold text-white">Final_Draft_v1.docx</p>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-400">Match Score: 98%</span>
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                        <span className="text-[10px] text-white/50">Match Score: 98%</span>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400 shadow-lg shadow-green-400/50"></span>
                       </div>
                     </div>
                   </div>
@@ -382,10 +395,10 @@ const App = () => {
               </div>
 
               {/* Center Dot */}
-              <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-green-600 rounded-full border-4 border-white dark:border-slate-900 z-20 hidden md:block shadow-[0_0_15px_rgba(22,163,74,0.5)]"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-green-500 rounded-full border-4 border-black z-20 hidden md:block shadow-[0_0_20px_rgba(34,197,94,0.6)]"></div>
 
               <div className="md:w-1/2 order-1 md:order-2 md:pl-12 hidden md:block">
-                <span className="text-6xl font-black text-slate-200 dark:text-slate-800 select-none">03</span>
+                <span className="text-6xl font-black text-white/5 select-none">03</span>
               </div>
             </div>
 
@@ -393,116 +406,88 @@ const App = () => {
         </div>
       </section>
 
-      {/* NEW: BENTO GRID FEATURES SECTION (Updated) */}
-      <section id="features" className="py-24 bg-slate-50 dark:bg-slate-900/50">
+      {/* FEATURES SECTION */}
+      <section id="features" className="py-32 bg-black border-t border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Everything You Need to Win</h2>
-            <p className="text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-              We combined advanced RAG technology with behavioral psychology to build the ultimate scholarship copilot.
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white">Everything You Need to Win</h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+              Advanced RAG technology combined with behavioral psychology to build the ultimate scholarship copilot.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[300px]">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-            {/* Feature 1: Large Card (Adaptive Scoring) */}
-            <div className="md:col-span-2 row-span-1 bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-                <Target className="w-48 h-48 text-blue-600" />
+            {/* Feature 1: Adaptive Scoring */}
+            <div className="md:col-span-2 bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                <Target className="w-48 h-48 text-blue-400" />
               </div>
-              <div className="relative z-10 h-full flex flex-col justify-between">
-                <div>
-                  <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center mb-4">
-                    <Target className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-2">Adaptive Scoring Engine</h3>
-                  <p className="text-slate-600 dark:text-slate-400 max-w-md">
-                    We don't just use one algorithm. The system dynamically re-weights your profile based on the scholarship type. A "Merit" scholarship prioritizes grades (80%), while a "Service" scholarship prioritizes volunteering (80%).
-                  </p>
-                </div>
-                {/* Visual Graph */}
-                <div className="flex items-end gap-2 h-24 mt-4 opacity-80">
-                  <div className="w-1/4 bg-blue-200 dark:bg-blue-900 rounded-t-lg h-[40%] group-hover:h-[60%] transition-all duration-500"></div>
-                  <div className="w-1/4 bg-blue-300 dark:bg-blue-800 rounded-t-lg h-[70%] group-hover:h-[40%] transition-all duration-500"></div>
-                  <div className="w-1/4 bg-blue-400 dark:bg-blue-700 rounded-t-lg h-[50%] group-hover:h-[80%] transition-all duration-500"></div>
-                  <div className="w-1/4 bg-blue-500 dark:bg-blue-600 rounded-t-lg h-[90%] group-hover:h-[50%] transition-all duration-500"></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Feature 2: Tall Card (Tone Matcher) */}
-            <div className="md:col-span-1 row-span-2 bg-slate-900 text-white rounded-3xl p-8 shadow-xl relative overflow-hidden flex flex-col">
-              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-purple-600/20 to-transparent"></div>
               <div className="relative z-10">
-                <div className="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center mb-4 border border-purple-500/30">
-                  <Sparkles className="w-6 h-6 text-purple-400" />
+                <div className="w-12 h-12 bg-blue-600/20 rounded-xl flex items-center justify-center mb-4 border border-blue-500/30">
+                  <Target className="w-6 h-6 text-blue-400" />
                 </div>
-                <h3 className="text-2xl font-bold mb-2">Tone Matcher</h3>
-                <p className="text-slate-300 text-sm mb-8">
-                  Analyzes the "About Us" page of the donor to replicate their specific vocabulary and emotional resonance.
+                <h3 className="text-2xl font-bold mb-3 text-white">Adaptive Scoring Engine</h3>
+                <p className="text-white/70 max-w-md leading-relaxed">
+                  System dynamically re-weights your profile based on scholarship type. Merit scholarships prioritize grades, service scholarships prioritize volunteering.
                 </p>
-
-                {/* Chat Bubble Visual */}
-                <div className="space-y-4 font-mono text-xs">
-                  <div className="bg-slate-800 p-3 rounded-lg rounded-tl-none border border-slate-700">
-                    <p className="text-slate-500 mb-1">Detected Tone:</p>
-                    <p className="text-purple-300">"Formal, Academic, Future-focused"</p>
-                  </div>
-                  <div className="bg-purple-900/40 p-3 rounded-lg rounded-tr-none border border-purple-500/30 ml-4">
-                    <p className="text-purple-200 mb-1">Adjusting Draft:</p>
-                    <p className="text-white">Replacing "I want to help" with "I aim to facilitate systemic change..."</p>
-                  </div>
-                </div>
               </div>
             </div>
 
-            {/* Feature 3: Small Card (Winner Database) */}
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm group">
-              <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center mb-4">
-                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            {/* Feature 2: Tone Matcher */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-purple-500/30 hover:bg-white/10 hover:border-purple-500/50 transition-all">
+              <div className="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center mb-4 border border-purple-500/30">
+                <Sparkles className="w-5 h-5 text-purple-400" />
               </div>
-              <h3 className="text-lg font-bold mb-2">Winner Mining</h3>
-              <p className="text-slate-500 text-sm">
-                We scraped 10,000+ past winner bios to find commonalities in successful applicants.
+              <h3 className="text-lg font-bold mb-2 text-white">Tone Matcher</h3>
+              <p className="text-white/70 text-sm">
+                Analyzes donor language to replicate their specific vocabulary and emotional resonance.
               </p>
             </div>
 
-            {/* Feature 4: Small Card (Privacy) */}
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm group">
-              <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center mb-4">
-                <ShieldCheck className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+            {/* Feature 3: Winner Mining */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all">
+              <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center mb-4 border border-green-500/30">
+                <CheckCircle className="w-5 h-5 text-green-400" />
               </div>
-              <h3 className="text-lg font-bold mb-2">Private by Design</h3>
-              <p className="text-slate-500 text-sm">
-                Your personal stories are processed ephemerally. We never train our models on your private data.
+              <h3 className="text-lg font-bold mb-2 text-white">Winner Mining</h3>
+              <p className="text-white/70 text-sm">
+                Analyzed 10,000+ past winner bios to find commonalities in successful applicants.
               </p>
             </div>
 
-            {/* Feature 5: Wide Card (Drafting) */}
-            <div className="md:col-span-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-8 text-white relative overflow-hidden flex items-center">
-              <div className="absolute right-0 bottom-0 opacity-20 transform translate-x-10 translate-y-10">
-                <PenTool className="w-64 h-64" />
+            {/* Feature 4: Privacy */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all">
+              <div className="w-10 h-10 bg-orange-600/20 rounded-lg flex items-center justify-center mb-4 border border-orange-500/30">
+                <ShieldCheck className="w-5 h-5 text-orange-400" />
+              </div>
+              <h3 className="text-lg font-bold mb-2 text-white">Private by Design</h3>
+              <p className="text-white/70 text-sm">
+                Stories processed ephemerally. We never train models on your private data.
+              </p>
+            </div>
+
+            {/* Feature 5: One-Click Tailoring */}
+            <div className="md:col-span-2 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 backdrop-blur-sm rounded-2xl p-8 border border-blue-500/30 hover:border-blue-500/50 transition-all relative overflow-hidden">
+              <div className="absolute right-0 bottom-0 opacity-10">
+                <PenTool className="w-48 h-48 text-blue-400" />
               </div>
               <div className="relative z-10 max-w-lg">
-                <h3 className="text-2xl font-bold mb-2">One-Click Tailoring</h3>
-                <p className="text-blue-100 mb-6">
-                  Have a generic "Base Essay"? Upload it once. We rewrite it instantly for 50 different scholarships, changing the angle every time.
+                <h3 className="text-2xl font-bold mb-3 text-white">One-Click Tailoring</h3>
+                <p className="text-white/70 mb-6">
+                  Upload a base essay once. We rewrite it instantly for 50 different scholarships, changing the angle every time.
                 </p>
-                <button className="bg-white text-blue-600 px-6 py-2 rounded-lg font-bold text-sm hover:bg-blue-50 transition-colors">
-                  Try the Magic Writer
-                </button>
               </div>
             </div>
 
-            {/* Feature 6: Small Card (Explainability) - THE MISSING PIECE */}
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm group relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-20 h-20 bg-yellow-400/20 rounded-full blur-2xl -mr-10 -mt-10"></div>
-              <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center mb-4">
-                <Zap className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            {/* Feature 6: Explainable AI */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all relative">
+              <div className="w-10 h-10 bg-yellow-600/20 rounded-lg flex items-center justify-center mb-4 border border-yellow-500/30">
+                <Zap className="w-5 h-5 text-yellow-400" />
               </div>
-              <h3 className="text-lg font-bold mb-2">Explainable AI</h3>
-              <p className="text-slate-500 text-sm">
-                "Why did we choose this word?" Hover over any sentence to see the strategy behind the edit.
+              <h3 className="text-lg font-bold mb-2 text-white">Explainable AI</h3>
+              <p className="text-white/70 text-sm">
+                Understand why each word was chosen. See the strategy behind every edit.
               </p>
             </div>
 
@@ -639,8 +624,8 @@ const App = () => {
         </div>
       </section>
 
-      {/* NEW: IMPACT STATS */}
-      <section className="py-20 bg-blue-600 dark:bg-blue-700 relative overflow-hidden">
+      {/* IMPACT STATS */}
+      <section className="py-20 bg-white/5 border-y border-white/10 relative overflow-hidden">
         {/* Decorative Circles */}
         <div className="absolute top-0 left-0 w-64 h-64 bg-white opacity-5 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-white opacity-5 rounded-full translate-x-1/2 translate-y-1/2"></div>
@@ -649,15 +634,15 @@ const App = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center text-white">
             <div className="p-6">
               <div className="text-5xl md:text-6xl font-black mb-2 tracking-tight">3.5<span className="text-2xl opacity-80">hrs</span></div>
-              <p className="font-medium text-blue-100 text-lg">Saved per application</p>
+              <p className="font-medium text-white/70 text-lg">Saved per application</p>
             </div>
-            <div className="p-6 border-y md:border-y-0 md:border-x border-blue-500/50">
+            <div className="p-6 border-y md:border-y-0 md:border-x border-white/20">
               <div className="text-5xl md:text-6xl font-black mb-2 tracking-tight">85<span className="text-2xl opacity-80">%</span></div>
-              <p className="font-medium text-blue-100 text-lg">Better tone matching score</p>
+              <p className="font-medium text-white/70 text-lg">Better tone matching score</p>
             </div>
             <div className="p-6">
               <div className="text-5xl md:text-6xl font-black mb-2 tracking-tight">24<span className="text-2xl opacity-80">/7</span></div>
-              <p className="font-medium text-blue-100 text-lg">Personalized guidance</p>
+              <p className="font-medium text-white/70 text-lg">Personalized guidance</p>
             </div>
           </div>
         </div>
@@ -915,70 +900,62 @@ const App = () => {
       </section>
 
       {/* FOOTER */}
-      <footer className="bg-white dark:bg-slate-950 pt-20 pb-10 border-t border-slate-200 dark:border-slate-800">
+      <footer className="bg-black pt-20 pb-10 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-16">
 
             {/* Brand Column */}
             <div className="col-span-2 md:col-span-1">
               <div className="flex items-center gap-2 mb-4">
-                <div className="bg-blue-600 p-1.5 rounded-lg">
+                <div className="bg-white/10 p-2 rounded-lg border border-white/20">
                   <Brain className="w-5 h-5 text-white" />
                 </div>
-                <span className="font-bold text-xl tracking-tight">ScholarMatch</span>
+                <span className="font-bold text-xl tracking-tight text-white">ScholarMatch</span>
               </div>
-              <p className="text-slate-500 text-sm leading-relaxed mb-6">
-                The first AI agent that helps students win scholarships by understanding the "hidden personality" of every committee.
+              <p className="text-white/60 text-sm leading-relaxed mb-6">
+                AI that helps students win scholarships by understanding the hidden values of every committee.
               </p>
               <div className="flex gap-4">
-                <a href="#" className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:bg-blue-600 hover:text-white transition-all">
+                <a href="https://github.com/Elliot-Sones/Anthropic_Hack" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/10 hover:text-white transition-all">
                   <Github className="w-5 h-5" />
-                </a>
-                <a href="#" className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:bg-blue-600 hover:text-white transition-all">
-                  <Layers className="w-5 h-5" />
                 </a>
               </div>
             </div>
 
             {/* Links Columns */}
             <div>
-              <h4 className="font-bold mb-6 text-slate-900 dark:text-white">Product</h4>
-              <ul className="space-y-4 text-sm text-slate-500">
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Features</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Live Demo</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Pricing</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">API Access</a></li>
+              <h4 className="font-semibold mb-6 text-white">Product</h4>
+              <ul className="space-y-4 text-sm text-white/50">
+                <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
+                <li><a href="/start" className="hover:text-white transition-colors">Live Demo</a></li>
+                <li><a href="/outreach" className="hover:text-white transition-colors">Outreach</a></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-bold mb-6 text-slate-900 dark:text-white">Resources</h4>
-              <ul className="space-y-4 text-sm text-slate-500">
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Success Stories</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Scholarship Database</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Essay Guides</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Help Center</a></li>
+              <h4 className="font-semibold mb-6 text-white">Resources</h4>
+              <ul className="space-y-4 text-sm text-white/50">
+                <li><a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a></li>
+                <li><a href="https://github.com/Elliot-Sones/Anthropic_Hack" className="hover:text-white transition-colors">Documentation</a></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-bold mb-6 text-slate-900 dark:text-white">Hackathon</h4>
-              <ul className="space-y-4 text-sm text-slate-500">
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Team</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Agentiiv Challenge</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Github Repo</a></li>
-                <li><a href="#" className="hover:text-blue-600 transition-colors">Pitch Deck</a></li>
+              <h4 className="font-semibold mb-6 text-white">Hackathon</h4>
+              <ul className="space-y-4 text-sm text-white/50">
+                <li><a href="https://github.com/Elliot-Sones/Anthropic_Hack" className="hover:text-white transition-colors">Github Repo</a></li>
+                <li><span className="text-white/30">Agentiiv 2025</span></li>
               </ul>
             </div>
           </div>
 
-          <div className="pt-8 border-t border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-slate-400 text-sm">
-              © {new Date().getFullYear()} ScholarMatch AI. Built for the Agentiiv Hackathon.
+          <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p className="text-white/40 text-sm">
+              © {new Date().getFullYear()} ScholarMatch AI. Built for Agentiiv Hackathon.
             </p>
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-              <span className="text-slate-500 text-xs font-medium uppercase tracking-wider">Systems Operational</span>
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse shadow-lg shadow-green-400/50"></span>
+              <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Systems Operational</span>
             </div>
           </div>
         </div>
