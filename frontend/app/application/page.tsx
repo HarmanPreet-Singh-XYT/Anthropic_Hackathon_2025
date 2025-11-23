@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, FileDown, Loader2, CheckCircle, Copy } from 'lucide-react';
+import { Sparkles, FileDown, Loader2, CheckCircle, Copy, ArrowRight } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -142,7 +142,7 @@ export default function ApplicationPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-white/20 relative">
+        <div className="h-screen overflow-hidden bg-[#050505] text-white font-sans selection:bg-white/20 relative flex flex-col">
             {/* Background Stars/Particles */}
             <div className="fixed inset-0 z-0 pointer-events-none">
                 {[...Array(30)].map((_, i) => (
@@ -173,28 +173,29 @@ export default function ApplicationPage() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[150px]" />
             </div>
 
-            {/* Main Content */}
-            <div className="relative z-10 max-w-6xl mx-auto px-6 py-12">
-                {/* Header */}
+
+            {/* Main Content - Fixed Layout */}
+            <div className="relative z-10 max-w-6xl mx-auto px-6 h-full flex flex-col">
+                {/* Header - Fixed */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8, ease: "easeOut" }}
-                    className="text-center mb-12"
+                    className="text-center py-6 flex-shrink-0"
                 >
-                    <div className="inline-flex items-center justify-center mb-4">
-                        <Sparkles className="w-12 h-12 text-white fill-white" />
+                    <div className="inline-flex items-center justify-center mb-3">
+                        <Sparkles className="w-10 h-10 text-white fill-white" />
                     </div>
-                    <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-3">
+                    <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-2">
                         Your Application
                     </h1>
-                    <p className="text-zinc-400 text-lg font-light tracking-wide">
+                    <p className="text-zinc-400 text-base font-light tracking-wide">
                         Ready to impress
                     </p>
                 </motion.div>
 
-                {/* Combined Content Section */}
-                <div ref={contentRef} className="space-y-6 mb-8">
+                {/* Combined Content Section - Scrollable */}
+                <div ref={contentRef} className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pb-6">
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -218,8 +219,8 @@ export default function ApplicationPage() {
                                 <button
                                     onClick={() => setActiveTab('essay')}
                                     className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${activeTab === 'essay'
-                                            ? 'bg-white text-black shadow-lg'
-                                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                        ? 'bg-white text-black shadow-lg'
+                                        : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                         }`}
                                 >
                                     Essay
@@ -227,8 +228,8 @@ export default function ApplicationPage() {
                                 <button
                                     onClick={() => setActiveTab('improvements')}
                                     className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${activeTab === 'improvements'
-                                            ? 'bg-white text-black shadow-lg'
-                                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                        ? 'bg-white text-black shadow-lg'
+                                        : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                         }`}
                                 >
                                     Improvements
@@ -236,8 +237,8 @@ export default function ApplicationPage() {
                                 <button
                                     onClick={() => setActiveTab('resume')}
                                     className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${activeTab === 'resume'
-                                            ? 'bg-white text-black shadow-lg'
-                                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                        ? 'bg-white text-black shadow-lg'
+                                        : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                         }`}
                                 >
                                     Resume
@@ -359,33 +360,33 @@ export default function ApplicationPage() {
                     </motion.div>
                 </div>
 
-                {/* Export Button */}
+                {/* Export and Action Buttons - Fixed at Bottom */}
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.6 }}
-                    className="flex justify-center gap-4"
+                    className="flex justify-center gap-4 flex-wrap py-4 flex-shrink-0"
                 >
                     <button
                         onClick={handleExportPDF}
                         disabled={isExporting}
-                        className="group relative h-14 px-8 rounded-xl font-medium text-base flex items-center justify-center gap-3 bg-white text-black hover:bg-zinc-100 disabled:bg-zinc-700 disabled:text-zinc-400 hover:scale-[1.02] active:scale-[0.98] shadow-2xl shadow-white/20 transition-all duration-300 overflow-hidden"
+                        className="group relative h-12 px-6 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-100 disabled:bg-zinc-700 disabled:text-zinc-400 hover:scale-[1.02] active:scale-[0.98] shadow-2xl shadow-white/20 transition-all duration-300 overflow-hidden"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                        <span className="relative z-10 flex items-center gap-3">
+                        <span className="relative z-10 flex items-center gap-2">
                             {isExporting ? (
                                 <>
-                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <Loader2 className="w-4 h-4 animate-spin" />
                                     Exporting...
                                 </>
                             ) : exportSuccess ? (
                                 <>
-                                    <CheckCircle className="w-5 h-5" />
+                                    <CheckCircle className="w-4 h-4" />
                                     Exported!
                                 </>
                             ) : (
                                 <>
-                                    <FileDown className="w-5 h-5" />
+                                    <FileDown className="w-4 h-4" />
                                     Export PDF
                                 </>
                             )}
@@ -394,11 +395,29 @@ export default function ApplicationPage() {
 
                     <button
                         onClick={() => router.push(`/outreach?session_id=${session_id}`)}
-                        className="group relative h-14 px-8 rounded-xl font-medium text-base flex items-center justify-center gap-3 bg-[#111111] text-white border border-white/10 hover:bg-white/5 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
+                        className="group relative h-12 px-6 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-[#111111] text-white border border-white/10 hover:bg-white/5 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
                     >
-                        <span className="relative z-10 flex items-center gap-3">
-                            <Sparkles className="w-5 h-5 text-blue-400" />
+                        <span className="relative z-10 flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-blue-400" />
                             Draft Email
+                        </span>
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            // Navigate back to start page with resume session to reuse
+                            const resumeSessionId = localStorage.getItem('resume_session_id');
+                            if (resumeSessionId) {
+                                router.push(`/start?resume_session=${resumeSessionId}`);
+                            } else {
+                                router.push('/start');
+                            }
+                        }}
+                        className="group relative h-12 px-6 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-purple-500/30 transition-all duration-300"
+                    >
+                        <span className="relative z-10 flex items-center gap-2">
+                            <ArrowRight className="w-4 h-4" />
+                            Submit Another Application
                         </span>
                     </button>
                 </motion.div>

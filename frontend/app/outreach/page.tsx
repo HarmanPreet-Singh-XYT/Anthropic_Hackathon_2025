@@ -87,8 +87,8 @@ function OutreachContent() {
                 <p className="text-zinc-400 max-w-md mb-8">
                     Please start a scholarship analysis first to generate a targeted outreach email.
                 </p>
-                <Link href="/" className="bg-white text-black px-6 py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors">
-                    Go to Home
+                <Link href="/start" className="bg-white text-black px-6 py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors">
+                    Go to Start
                 </Link>
             </div>
         );
@@ -98,9 +98,9 @@ function OutreachContent() {
         <div className="max-w-4xl mx-auto px-6 py-12">
             {/* Header */}
             <div className="mb-12">
-                <Link href="/" className="inline-flex items-center gap-2 text-zinc-500 hover:text-white transition-colors mb-6 text-sm">
+                <Link href={`/application?session=${sessionId}`} className="inline-flex items-center gap-2 text-zinc-500 hover:text-white transition-colors mb-6 text-sm">
                     <ArrowLeft className="w-4 h-4" />
-                    Back to Home
+                    Back to Application
                 </Link>
 
                 <motion.div

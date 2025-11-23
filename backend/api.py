@@ -89,6 +89,9 @@ workflow_sessions: Dict[str, Dict[str, Any]] = {}
 # Interview session storage (in-memory)
 interview_sessions: Dict[str, Dict[str, Any]] = {}
 
+# Application history storage (in-memory) - maps resume_session_id to list of applications
+application_history: Dict[str, List[Dict[str, Any]]] = {}
+
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 
@@ -418,6 +421,96 @@ async def delete_session_data(session_id: str):
         )
 
 
+@app.get("/api/resume/session/{session_id}/validate")
+async def validate_resume_session(session_id: str):
+    """
+    Validate that a resume session exists and has data
+    
+    Args:
+        session_id: Session ID from resume upload
+        
+    Returns:
+        Validation status, chunk count, and metadata
+    """
+    if vector_store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vector store not initialized"
+        )
+    
+    try:
+        print(f"✓ [API] Validating resume session: {session_id}")
+        
+        # Query for documents with this session_id
+        all_docs = vector_store.collection.get(
+            where={"session_id": session_id}
+        )
+        
+        if not all_docs["ids"]:
+            print(f"   ℹ️ No documents found for session: {session_id}")
+            return {
+                "valid": False,
+                "session_id": session_id,
+                "chunks_count": 0,
+                "message": "No resume data found for this session"
+            }
+        
+        # Session exists and has data
+        chunks_count = len(all_docs["ids"])
+        print(f"   ✓ Found {chunks_count} chunks for session: {session_id}")
+        
+        # Extract metadata from first chunk
+        metadata = all_docs["metadatas"][0] if all_docs["metadatas"] else {}
+        
+        return {
+            "valid": True,
+            "session_id": session_id,
+            "chunks_count": chunks_count,
+            "metadata": metadata,
+            "message": "Resume session is valid"
+        }
+    
+    except Exception as e:
+        print(f"   ❌ Error validating session {session_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error validating session: {str(e)}"
+        )
+
+
+@app.get("/api/applications/history/{resume_session_id}")
+async def get_application_history(resume_session_id: str):
+    """
+    Get all applications submitted for a resume session
+    
+    Args:
+        resume_session_id: Resume session ID
+        
+    Returns:
+        List of applications with basic info (workflow_session_id, scholarship_url, status, created_at)
+    """
+    try:
+        print(f"📋 [API] Fetching application history for resume session: {resume_session_id}")
+        
+        # Get all applications for this resume session
+        applications = application_history.get(resume_session_id, [])
+        
+        print(f"   ✓ Found {len(applications)} applications")
+        
+        return {
+            "success": True,
+            "resume_session_id": resume_session_id,
+            "applications": applications,
+            "count": len(applications)
+        }
+    
+    except Exception as e:
+        print(f"   ❌ Error fetching application history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching application history: {str(e)}"
+        )
+
 
 # ==================== Scout Workflow Endpoints ====================
 
@@ -572,14 +665,16 @@ async def start_workflow(
     }
     
     # Background task wrapper
-    async def run_workflow_background():
-        try:
+    async def run_workflow_background():\n        try:
             print(f"[Workflow Task] Starting for workflow session {workflow_session_id}")
             print(f"[Workflow Task] Using resume session: {resume_session_id}")
             
+            # Get scholarship URL from session (avoid closure issues)
+            session_scholarship_url = workflow_sessions[workflow_session_id]["scholarship_url"]
+            
             # Run workflow with resume session ID
             final_state = await workflow_orchestrator.run(
-                scholarship_url=scholarship_url,
+                scholarship_url=session_scholarship_url,
                 resume_pdf_path=target_resume_path,
                 session_id=resume_session_id  # Pass resume session for vector queries
             )
@@ -609,6 +704,21 @@ async def start_workflow(
                     "scholarship_intelligence": final_state.get("scholarship_intelligence"),
                     "resume_text": final_state.get("resume_text")
                 }
+                
+                # Track completed application in history
+                app_scholarship_url = workflow_sessions[workflow_session_id].get("scholarship_url", "Unknown")
+                if resume_session_id not in application_history:
+                    application_history[resume_session_id] = []
+                
+                application_history[resume_session_id].append({
+                    "workflow_session_id": workflow_session_id,
+                    "scholarship_url": app_scholarship_url,
+                    "status": "complete",
+                    "created_at": workflow_sessions[workflow_session_id].get("created_at"),
+                    "match_score": final_state.get("match_score"),
+                    "had_interview": False
+                })
+                print(f"[Workflow Task] Added application to history for resume session {resume_session_id}")
                 
             print(f"[Workflow Task] Finished step for workflow session {workflow_session_id}")
             
@@ -670,6 +780,24 @@ async def resume_workflow(
                 "scholarship_intelligence": final_state.get("scholarship_intelligence"),
                 "resume_text": final_state.get("resume_text")
             }
+            
+            # Track completed application with interview in history  
+            resume_session_id = session.get("resume_session_id")
+            app_scholarship_url = session.get("scholarship_url", "Unknown")
+            if resume_session_id:
+                if resume_session_id not in application_history:
+                    application_history[resume_session_id] = []
+                
+                application_history[resume_session_id].append({
+                    "workflow_session_id": session_id,
+                    "scholarship_url": app_scholarship_url,
+                    "status": "complete",
+                    "created_at": session.get("created_at"),
+                    "match_score": final_state.get("match_score"),
+                    "had_interview": True
+                })
+                print(f"[Workflow Task] Added application with interview to history for resume session {resume_session_id}")
+            
             print(f"[Workflow Task] Completed session {session_id}")
             
         except Exception as e:
