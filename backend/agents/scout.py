@@ -74,7 +74,7 @@ class ScoutAgent:
             }
             
             print(f"    [INFO] Fetching via Jina Reader: {jina_url}")
-            response = requests.get(jina_url, headers=headers, timeout=30)
+            response = requests.get(jina_url, headers=headers, timeout=10)
             response.raise_for_status()
             
             # Jina returns markdown directly
@@ -201,7 +201,7 @@ OUTPUT ONLY THE JSON, NO EXPLANATION.
             headers = {'User-Agent': self.ua.random}
             
             print(f"    [INFO] Fetching via Jina Reader...")
-            response = requests.get(jina_url, headers=headers, timeout=30)
+            response = requests.get(jina_url, headers=headers, timeout=10)
             response.raise_for_status()
             markdown = response.text
             

@@ -265,6 +265,7 @@ class ScholarshipWorkflow:
         
         try:
             analysis = state.get("decoder_analysis", {})
+            session_id = state.get("session_id")
             result = await self.agents["matchmaker"].run(
                 analysis,
                 session_id=session_id

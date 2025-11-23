@@ -657,14 +657,13 @@ async def resume_workflow(
                 bridge_story=bridge_story,
                 checkpoint_state=checkpoint_state
             )
-            print(final_state.get("optimized_resume_markdown"))
+            print(final_state.get("resume_markdown"))
             session["status"] = "complete"
             session["result"] = {
                 "matchmaker_results": final_state.get("matchmaker_results"),
                 "essay_draft": final_state.get("essay_draft"),
                 "resume_optimizations": final_state.get("resume_optimizations"),
-                "optimized_resume_markdown": final_state.get("optimized_resume_markdown"),
-                "strategy_note": final_state.get("strategy_note"),
+                "optimized_resume_markdown": final_state.get("resume_markdown"),  # Map resume_markdown to optimized_resume_markdown for frontend
                 "strategy_note": final_state.get("strategy_note"),
                 "match_score": final_state.get("match_score"),
                 "gaps": final_state.get("identified_gaps"),

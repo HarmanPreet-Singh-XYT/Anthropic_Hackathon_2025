@@ -229,12 +229,40 @@ class GhostwriterAgent:
                 user_message=full_prompt
             )
             
-            # Simple JSON parsing (reusing logic would be better, but keeping it self-contained for now)
+            # Robust JSON parsing (same approach as essay generation)
             cleaned = response_text.strip()
-            if cleaned.startswith("```json"): cleaned = cleaned[7:]
-            if cleaned.endswith("```"): cleaned = cleaned[:-3]
             
-            return json.loads(cleaned.strip())
+            # Remove markdown code blocks
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            elif cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            
+            cleaned = cleaned.strip()
+            
+            # Remove control characters
+            import re
+            cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', cleaned)
+            
+            try:
+                # Attempt standard JSON parsing
+                return json.loads(cleaned)
+            except json.JSONDecodeError as e:
+                print(f"  ⚠ JSON parse error: {e}, attempting extraction...")
+                
+                # Fallback: Extract fields with regex
+                subject_match = re.search(r'"subject"\s*:\s*"(.*?)"', cleaned, re.DOTALL)
+                body_match = re.search(r'"body"\s*:\s*"(.*?)"(?=\s*[,}])', cleaned, re.DOTALL)
+                
+                if subject_match and body_match:
+                    return {
+                        "subject": subject_match.group(1).replace('\\"', '"'),
+                        "body": body_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                    }
+                else:
+                    raise
             
         except Exception as e:
             print(f"  ⚠ Outreach email generation failed: {e}")

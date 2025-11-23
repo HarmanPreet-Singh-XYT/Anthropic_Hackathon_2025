@@ -98,32 +98,56 @@ class DecoderAgent:
                 user_message=full_prompt
             )
 
-            # Parse JSON with robust markdown fence removal
+            # Parse JSON with robust extraction
             cleaned_response = response_text.strip()
             
-            # Remove markdown code fences (handle various formats)
+            # Remove markdown code fences first
             if "```json" in cleaned_response:
-                # Extract content between ```json and ```
                 start = cleaned_response.find("```json") + 7
                 end = cleaned_response.find("```", start)
-                cleaned_response = cleaned_response[start:end].strip()
+                if end != -1:
+                    cleaned_response = cleaned_response[start:end].strip()
             elif "```" in cleaned_response:
-                # Extract content between ``` and ```
                 start = cleaned_response.find("```") + 3
                 end = cleaned_response.find("```", start)
-                cleaned_response = cleaned_response[start:end].strip()
-            
-            # Find JSON object boundaries if there's extra text
-            if not cleaned_response.startswith('{'):
+                if end != -1:
+                    cleaned_response = cleaned_response[start:end].strip()
+
+            # Attempt to find the first outer-most JSON object
+            try:
                 start_idx = cleaned_response.find('{')
-                if start_idx != -1:
-                    cleaned_response = cleaned_response[start_idx:]
-            if not cleaned_response.endswith('}'):
-                end_idx = cleaned_response.rfind('}')
+                if start_idx == -1:
+                    raise ValueError("No JSON object found")
+                
+                # Simple brace counting to find the end
+                brace_count = 0
+                end_idx = -1
+                for i, char in enumerate(cleaned_response[start_idx:], start=start_idx):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i + 1
+                            break
+                
                 if end_idx != -1:
-                    cleaned_response = cleaned_response[:end_idx + 1]
-            
-            analysis = json.loads(cleaned_response)
+                    cleaned_response = cleaned_response[start_idx:end_idx]
+                else:
+                    # Fallback to rfind if counting fails (e.g. malformed)
+                    cleaned_response = cleaned_response[start_idx:]
+                    last_brace = cleaned_response.rfind('}')
+                    if last_brace != -1:
+                        cleaned_response = cleaned_response[:last_brace+1]
+
+                analysis = json.loads(cleaned_response)
+            except json.JSONDecodeError as e:
+                print(f"  ⚠ JSON Parse Error: {e}")
+                # Try one more aggressive cleanup if simple parsing failed
+                # Sometimes LLMs put comments like // inside JSON which is invalid
+                import re
+                cleaned_response = re.sub(r'//.*', '', cleaned_response)
+                analysis = json.loads(cleaned_response)
             
             # Validate the analysis has required fields
             if not analysis.get('hidden_weights') or not isinstance(analysis['hidden_weights'], dict):

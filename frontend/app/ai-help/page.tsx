@@ -358,7 +358,7 @@ export default function AIHelpPage() {
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: 0.1 }}
                                 whileHover={{ y: -3 }}
-                                className="relative h-full bg-black/50 backdrop-blur-3xl border border-white/20 rounded-3xl p-6 flex flex-col overflow-hidden min-h-[700px]"
+                                className="relative h-full bg-black/50 backdrop-blur-3xl border border-white/20 rounded-3xl p-6 flex flex-col overflow-hidden max-h-[700px]"
                                 style={{ boxShadow: '0 0 60px rgba(255,255,255,0.1)' }}
                             >
                                 <div className="relative z-10 mb-4 flex items-center gap-3 flex-shrink-0">
