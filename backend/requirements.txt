@@ -31,7 +31,10 @@ asyncio>=3.4.3
 # Web Scraping (for Scout Agent)
 beautifulsoup4>=4.12.0
 requests>=2.31.0
+requests>=2.31.0
 lxml>=5.0.0
+fake-useragent>=1.5.1
+markdownify>=0.11.6
 
 # Optional: Progress tracking and logging
 tqdm>=4.66.0
