@@ -217,31 +217,28 @@ export default function ApplicationPage() {
                             <div className="flex items-center gap-1 bg-[#0a0a0a]/80 border border-white/10 rounded-xl p-1">
                                 <button
                                     onClick={() => setActiveTab('essay')}
-                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${
-                                        activeTab === 'essay'
+                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${activeTab === 'essay'
                                             ? 'bg-white text-black shadow-lg'
                                             : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                                    }`}
+                                        }`}
                                 >
                                     Essay
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('improvements')}
-                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${
-                                        activeTab === 'improvements'
+                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${activeTab === 'improvements'
                                             ? 'bg-white text-black shadow-lg'
                                             : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                                    }`}
+                                        }`}
                                 >
                                     Improvements
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('resume')}
-                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${
-                                        activeTab === 'resume'
+                                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all duration-300 ${activeTab === 'resume'
                                             ? 'bg-white text-black shadow-lg'
                                             : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                                    }`}
+                                        }`}
                                 >
                                     Resume
                                 </button>
@@ -367,7 +364,7 @@ export default function ApplicationPage() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.6 }}
-                    className="flex justify-center"
+                    className="flex justify-center gap-4"
                 >
                     <button
                         onClick={handleExportPDF}
@@ -392,6 +389,16 @@ export default function ApplicationPage() {
                                     Export PDF
                                 </>
                             )}
+                        </span>
+                    </button>
+
+                    <button
+                        onClick={() => router.push(`/outreach?session_id=${session_id}`)}
+                        className="group relative h-14 px-8 rounded-xl font-medium text-base flex items-center justify-center gap-3 bg-[#111111] text-white border border-white/10 hover:bg-white/5 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
+                    >
+                        <span className="relative z-10 flex items-center gap-3">
+                            <Sparkles className="w-5 h-5 text-blue-400" />
+                            Draft Email
                         </span>
                     </button>
                 </motion.div>
