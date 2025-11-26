@@ -1,4 +1,9 @@
 # ScholarFit AI
+<div align="center">
+  <a href="https://youtu.be/JfjWb-Z1h7U">
+    <img src="https://img.youtube.com/vi/JfjWb-Z1h7U/hqdefault.jpg" alt="Watch the video" />
+  </a>
+</div>
 
 > Transform scholarship applications through intelligent narrative alignment
 
