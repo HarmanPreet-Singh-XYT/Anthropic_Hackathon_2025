@@ -1,11 +1,12 @@
 "use client"
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   BookOpen, Star, Clock, CheckCircle2,
   FileText, ChevronRight, Zap, GraduationCap,
   Calendar, ArrowUpRight, Sparkles, Layout, CreditCard, Loader2
 } from 'lucide-react';
-import { getDashboardData, DashboardResponse, Application } from '@/lib/api';
+import { getDashboardData, DashboardResponse, DashboardApplication, DashboardWorkflow } from '@/lib/api';
 
 // --- MOCK DATA (For User, Wallet, Subscription) ---
 const mockUserData = {
@@ -65,10 +66,24 @@ const MatchBadge = ({ score }: { score: number | null }) => {
 };
 
 const Dashboard = () => {
+  const searchParams = useSearchParams();
   const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
   const [userInfo, setUserInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkoutStatus, setCheckoutStatus] = useState<'success' | 'canceled' | null>(null);
+
+  useEffect(() => {
+    const status = searchParams.get('checkout');
+    if (status === 'success' || status === 'canceled') {
+      setCheckoutStatus(status as 'success' | 'canceled');
+      // Clear the URL parameter after 5 seconds
+      setTimeout(() => {
+        window.history.replaceState({}, '', '/dashboard');
+        setCheckoutStatus(null);
+      }, 5000);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -117,18 +132,37 @@ const Dashboard = () => {
     );
   }
 
-  // Use API data or fallback to empty arrays
-  const applications = dashboardData?.applications || [];
-  const stats = dashboardData?.stats || {
-    total_applications: 0,
-    total_interviews: 0,
-    average_match_score: 0,
-    active_workflows_count: 0
+  // Extract data from new API structure
+  const resumeSessions = dashboardData?.resume_sessions || [];
+  const usageStats = dashboardData?.usage || {
+    queries_today: 0,
+    queries_month: 0,
+    tokens_used_today: 0,
+    tokens_used_month: 0
   };
+  const recentActivity = dashboardData?.recent_activity || [];
 
-  // Combine applications and active workflows for recent activity if needed, 
-  // or just use applications for now as the main list.
-  // The API returns 'applications' separately.
+  // Flatten all applications from all resume sessions and workflows
+  const allApplications: DashboardApplication[] = [];
+  let activeWorkflowsCount = 0;
+
+  resumeSessions.forEach(resume => {
+    resume.workflow_sessions.forEach(workflow => {
+      if (workflow.status === 'processing' || workflow.status === 'waiting_for_input') {
+        activeWorkflowsCount++;
+      }
+      workflow.applications.forEach(app => {
+        allApplications.push(app);
+      });
+    });
+  });
+
+  // Calculate stats from the data
+  const totalApplications = allApplications.length;
+  const totalInterviews = allApplications.filter(app => app.had_interview).length;
+  const averageMatchScore = allApplications.length > 0
+    ? allApplications.reduce((sum, app) => sum + (app.match_score || 0), 0) / allApplications.length
+    : 0;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-600">
@@ -153,12 +187,36 @@ const Dashboard = () => {
         </div>
       </nav>
 
+      {/* Checkout Status Notifications */}
+      {checkoutStatus === 'success' && (
+        <div className="bg-green-50 border-b border-green-200 px-6 py-4">
+          <div className="max-w-6xl mx-auto flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-green-600" />
+            <div>
+              <p className="font-bold text-green-900">Subscription activated!</p>
+              <p className="text-sm text-green-700">Your payment was successful. Welcome to ScholarFit Pro!</p>
+            </div>
+          </div>
+        </div>
+      )}
+      {checkoutStatus === 'canceled' && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-6 py-4">
+          <div className="max-w-6xl mx-auto flex items-center gap-3">
+            <Clock className="w-5 h-5 text-yellow-600" />
+            <div>
+              <p className="font-bold text-yellow-900">Checkout canceled</p>
+              <p className="text-sm text-yellow-700">You can subscribe anytime from the pricing page.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto px-6 py-8">
 
         {/* Welcome Section */}
         <header className="mb-10">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Welcome back! 👋</h1>
-          <p className="text-lg text-slate-500">You're making great progress. You have <strong className="text-purple-600">{stats.active_workflows_count} active applications</strong> this week.</p>
+          <p className="text-lg text-slate-500">You're making great progress. You have <strong className="text-purple-600">{activeWorkflowsCount} active applications</strong> this week.</p>
         </header>
 
         {/* Key Stats Row */}
@@ -173,7 +231,7 @@ const Dashboard = () => {
               <span className="text-sm font-bold text-slate-400 uppercase">Pro Plan</span>
             </div>
             <div>
-              <div className="text-3xl font-bold text-slate-900 mb-1">{mockUserData.wallet.balance_tokens}</div>
+              <div className="text-3xl font-bold text-slate-900 mb-1">{dashboardData?.wallet?.balance_tokens || mockUserData.wallet.balance_tokens}</div>
               <p className="text-sm text-slate-500">AI Credits available</p>
             </div>
           </div>
@@ -186,7 +244,7 @@ const Dashboard = () => {
               </div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-slate-900 mb-1">{stats.total_applications}</div>
+              <div className="text-3xl font-bold text-slate-900 mb-1">{totalApplications}</div>
               <p className="text-sm text-slate-500">Scholarships found</p>
             </div>
           </div>
@@ -214,12 +272,12 @@ const Dashboard = () => {
               <button className="text-sm font-bold text-purple-600 hover:text-purple-700">View All</button>
             </div>
 
-            {applications.length === 0 ? (
+            {allApplications.length === 0 ? (
               <div className="text-center py-10 bg-white rounded-3xl border border-slate-100">
                 <p className="text-slate-400">No applications found yet.</p>
               </div>
             ) : (
-              applications.map((app) => (
+              allApplications.map((app: DashboardApplication) => (
                 <div key={app.id} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-all group">
                   <div className="flex justify-between items-start mb-4">
                     <div>
@@ -228,7 +286,6 @@ const Dashboard = () => {
                       </h3>
                       <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
                         <FileText className="w-4 h-4" />
-                        {/* Resume filename is not directly in Application object, would need to join with resumes list if needed */}
                         <span>Application ID: {app.id.substring(0, 8)}</span>
                       </div>
                     </div>
@@ -290,9 +347,31 @@ const Dashboard = () => {
                 <Clock className="w-5 h-5 text-slate-400" /> Recent Activity
               </h3>
 
-              <div className="space-y-6">
-                {/* Placeholder for activity feed */}
-                <p className="text-sm text-slate-400 italic">Activity feed coming soon...</p>
+              <div className="space-y-4">
+                {recentActivity.length === 0 ? (
+                  <p className="text-sm text-slate-400 italic">No recent activity</p>
+                ) : (
+                  recentActivity.slice(0, 5).map((activity, idx) => (
+                    <div key={`${activity.ref_id}-${idx}`} className="flex items-start gap-3 pb-4 border-b border-slate-100 last:border-0">
+                      <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center flex-shrink-0">
+                        {activity.type === 'transaction_deduction' && <Zap className="w-4 h-4 text-purple-600" />}
+                        {activity.type === 'transaction_purchase' && <CreditCard className="w-4 h-4 text-green-600" />}
+                        {activity.type === 'workflow_completed' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{activity.description}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {new Date(activity.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      {activity.amount !== undefined && (
+                        <span className={`text-sm font-bold ${activity.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {activity.amount > 0 ? '+' : ''}{activity.amount}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -313,17 +392,34 @@ const Dashboard = () => {
                   <span className="text-slate-500 flex items-center gap-2">
                     <Calendar className="w-4 h-4" /> Next Renewal
                   </span>
-                  <span className="font-bold text-slate-700">Dec 1, 2025</span>
+                  <span className="font-bold text-slate-700">
+                    {dashboardData?.subscription?.current_period_end
+                      ? new Date(dashboardData.subscription.current_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : 'Dec 1, 2025'}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl">
                   <span className="text-slate-500 flex items-center gap-2">
                     <CreditCard className="w-4 h-4" /> Plan
                   </span>
-                  <span className="font-bold text-purple-600">Pro Student</span>
+                  <span className="font-bold text-purple-600">{dashboardData?.subscription?.plan?.name || 'Pro Student'}</span>
                 </div>
               </div>
 
-              <button className="w-full mt-4 py-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors">
+              <button
+                onClick={async () => {
+                  if (!userInfo?.id) return;
+                  try {
+                    const { createPortalSession } = await import('@/lib/api');
+                    const { url } = await createPortalSession(userInfo.id, window.location.href);
+                    window.location.href = url;
+                  } catch (error) {
+                    console.error('Failed to open portal:', error);
+                    alert('Failed to open subscription management. Please try again.');
+                  }
+                }}
+                className="w-full mt-4 py-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+              >
                 Manage Subscription
               </button>
             </div>

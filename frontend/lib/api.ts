@@ -186,48 +186,97 @@ export async function clearResume(userId?: string): Promise<{ success: boolean; 
 
 // --- Dashboard API Interfaces ---
 
-export interface Application {
+export interface UserInfo {
     id: string;
-    workflow_session_id: string;
+    email: string | null;
+}
+
+export interface WalletInfo {
+    balance_tokens: number;
+    currency: string;
+    last_updated: string | null; // ISO Date
+}
+
+export interface PlanInfo {
+    name: string;
+    interval: string;
+    price_cents: number;
+    tokens_per_period: number;
+    features: Record<string, any> | null;
+}
+
+export interface SubscriptionInfo {
+    status: string;
+    plan: PlanInfo;
+    current_period_start: string | null;
+    current_period_end: string | null;
+}
+
+export interface DashboardApplication {
+    id: string;
     scholarship_url: string;
-    status: "complete" | "error" | string; // Allow other statuses
+    status: string;
     match_score: number | null;
     had_interview: boolean;
     created_at: string;
 }
 
-export interface Resume {
+export interface DashboardInterview {
     id: string;
-    filename: string;
+    current_target: string | null;
     created_at: string;
-    file_size_bytes: number;
+    completed_at: string | null;
 }
 
-export interface ActiveWorkflow {
+export interface DashboardWorkflow {
     id: string;
-    status: "processing" | "waiting_for_input" | "processing_resume" | string;
     scholarship_url: string;
+    status: string;
+    match_score: number | null;
     created_at: string;
     updated_at: string | null;
+    completed_at: string | null;
+    applications: DashboardApplication[];
+    interview_session: DashboardInterview | null;
+}
+
+export interface DashboardResume {
+    id: string;
+    filename: string;
+    file_size_bytes: number;
+    created_at: string;
+    text_preview: string | null;
+    workflow_sessions: DashboardWorkflow[];
+}
+
+export interface UsageStats {
+    queries_today: number;
+    queries_month: number;
+    tokens_used_today: number;
+    tokens_used_month: number;
+}
+
+export interface ActivityItem {
+    type: string;
+    ref_id: string;
+    description: string;
+    timestamp: string;
+    amount?: number;
 }
 
 export interface DashboardResponse {
-    user_id: string | null;
-    stats: {
-        total_applications: number;
-        total_interviews: number;
-        average_match_score: number;
-        active_workflows_count: number;
-    };
-    applications: Application[];
-    resumes: Resume[];
-    active_workflows: ActiveWorkflow[];
+    user: UserInfo;
+    wallet: WalletInfo | null;
+    subscription: SubscriptionInfo | null;
+    resume_sessions: DashboardResume[];
+    usage: UsageStats;
+    recent_activity: ActivityItem[];
 }
 
 /**
  * Fetch dashboard data
- * @param userId - Logto User ID
- * @returns Dashboard data including stats, applications, etc.
+ * @param userId - Logto User ID (sent via x-user-id header)
+ * @returns Dashboard data including user info, wallet, subscription, resume sessions, usage stats, and recent activity
  */
 export async function getDashboardData(userId: string): Promise<DashboardResponse> {
     const response = await fetch(`${API_BASE_URL}/api/dashboard`, {
@@ -242,3 +291,134 @@ export async function getDashboardData(userId: string): Promise<DashboardRespons
 
     return response.json();
 }
+
+// --- Stripe Payment API Interfaces ---
+
+export interface BillingPlan {
+    id: string;
+    slug: string;
+    name: string;
+    price_cents: number;
+    interval: string;
+    tokens_per_period: number;
+    features: Record<string, any> | null;
+}
+
+export interface BillingPlansResponse {
+    plans: BillingPlan[];
+}
+
+export interface CheckoutSessionResponse {
+    session_id: string;
+    url: string;
+}
+
+export interface PortalSessionResponse {
+    url: string;
+}
+
+export interface CancelSubscriptionResponse {
+    success: boolean;
+    message: string;
+    period_end: string;
+}
+
+/**
+ * Get available billing plans
+ * @returns List of available subscription plans
+ */
+export async function getBillingPlans(): Promise<BillingPlansResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/billing/plans`);
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch billing plans with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+/**
+ * Create a Stripe checkout session
+ * @param userId - Logto User ID
+ * @param planSlug - Plan identifier (e.g., "pro")
+ * @param successUrl - URL to redirect after successful payment
+ * @param cancelUrl - URL to redirect if user cancels
+ * @returns Checkout session with redirect URL
+ */
+export async function createCheckoutSession(
+    userId: string,
+    planSlug: string,
+    successUrl: string,
+    cancelUrl: string
+): Promise<CheckoutSessionResponse> {
+    const formData = new FormData();
+    formData.append('plan_slug', planSlug);
+    formData.append('success_url', successUrl);
+    formData.append('cancel_url', cancelUrl);
+
+    const response = await fetch(`${API_BASE_URL}/api/stripe/create-checkout-session`, {
+        method: 'POST',
+        headers: {
+            'x-user-id': userId,
+        },
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const error: ErrorResponse = await response.json();
+        throw new Error(error.detail || `Checkout session creation failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+/**
+ * Create a Stripe customer portal session
+ * @param userId - Logto User ID
+ * @param returnUrl - URL to redirect back to after portal
+ * @returns Portal session with redirect URL
+ */
+export async function createPortalSession(
+    userId: string,
+    returnUrl: string
+): Promise<PortalSessionResponse> {
+    const formData = new FormData();
+    formData.append('return_url', returnUrl);
+
+    const response = await fetch(`${API_BASE_URL}/api/stripe/create-portal-session`, {
+        method: 'POST',
+        headers: {
+            'x-user-id': userId,
+        },
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const error: ErrorResponse = await response.json();
+        throw new Error(error.detail || `Portal session creation failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+/**
+ * Cancel user's subscription (at period end)
+ * @param userId - Logto User ID
+ * @returns Cancellation confirmation with period end date
+ */
+export async function cancelSubscription(userId: string): Promise<CancelSubscriptionResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/subscription/cancel`, {
+        method: 'POST',
+        headers: {
+            'x-user-id': userId,
+        },
+    });
+
+    if (!response.ok) {
+        const error: ErrorResponse = await response.json();
+        throw new Error(error.detail || `Subscription cancellation failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+

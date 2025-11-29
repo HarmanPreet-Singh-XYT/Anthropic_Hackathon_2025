@@ -112,6 +112,139 @@ class Application(Base):
     resume_session = relationship("ResumeSession", back_populates="applications")
 
 
+class User(Base):
+    """User account"""
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)  # Matches auth provider ID
+    email = Column(String, unique=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    wallet = relationship("UserWallet", back_populates="user", uselist=False)
+    transactions = relationship("WalletTransaction", back_populates="user")
+    usage_records = relationship("UsageRecord", back_populates="user")
+    subscriptions = relationship("Subscription", back_populates="user")
+    invoices = relationship("Invoice", back_populates="user")
+
+
+class UserWallet(Base):
+    """User token wallet"""
+    __tablename__ = "user_wallets"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    balance_tokens = Column(Integer, default=0)  # Changed to Integer for BigInt compatibility in Python
+    currency = Column(String(10), default='TOK')
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="wallet")
+
+
+class WalletTransaction(Base):
+    """Wallet transaction history"""
+    __tablename__ = "wallet_transactions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    amount = Column(Integer, nullable=False)  # BigInt
+    balance_after = Column(Integer, nullable=False)  # BigInt
+    kind = Column(String, nullable=False)  # deduction, grant, purchase
+    reference_id = Column(String, nullable=True)
+    metadata_json = Column("metadata", JSON, nullable=True)  # 'metadata' is reserved in SQLAlchemy Base
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="transactions")
+
+
+class UsageRecord(Base):
+    """Resource usage tracking"""
+    __tablename__ = "usage_records"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    resource_type = Column(String, nullable=False)
+    resource_id = Column(String, nullable=False)
+    tokens_used = Column(Integer, nullable=False)  # BigInt
+    cost_cents = Column(Integer, nullable=True)
+    metadata_json = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="usage_records")
+
+
+class BillingPlan(Base):
+    """Subscription billing plans"""
+    __tablename__ = "billing_plans"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    slug = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    price_cents = Column(Integer, nullable=False)
+    interval = Column(String, nullable=False)  # month, year
+    tokens_per_period = Column(Integer, nullable=False)  # BigInt
+    features = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    subscriptions = relationship("Subscription", back_populates="plan")
+
+
+class Subscription(Base):
+    """User subscriptions"""
+    __tablename__ = "subscriptions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    plan_id = Column(String, ForeignKey("billing_plans.id"), nullable=False)
+    status = Column(String, nullable=False)  # active, canceled, past_due
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True)
+    cancel_at_period_end = Column(Boolean, default=False)
+    trial_end = Column(DateTime, nullable=True)
+    external_subscription_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="subscriptions")
+    plan = relationship("BillingPlan", back_populates="subscriptions")
+    payments = relationship("SubscriptionPayment", back_populates="subscription")
+
+
+class SubscriptionPayment(Base):
+    """Subscription payment history"""
+    __tablename__ = "subscription_payments"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    subscription_id = Column(String, ForeignKey("subscriptions.id"), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String(10), default='USD')
+    status = Column(String, nullable=False)
+    external_payment_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    subscription = relationship("Subscription", back_populates="payments")
+
+
+class Invoice(Base):
+    """Invoices"""
+    __tablename__ = "invoices"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    status = Column(String, nullable=False)
+    due_date = Column(DateTime, nullable=True)
+    metadata_json = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="invoices")
+
+
 # Database connection and session management
 class DatabaseManager:
     """Manages database connections and sessions"""

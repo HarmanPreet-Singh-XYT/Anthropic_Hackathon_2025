@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks, Depends, Header
+from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -34,7 +34,10 @@ from workflows.db_operations import (
     WorkflowSessionOperations,
     ResumeSessionOperations,
     InterviewSessionOperations,
-    ApplicationOperations
+    ApplicationOperations,
+    UserOperations,
+    UsageRecordOperations,
+    WalletTransactionOperations
 )
 
 
@@ -62,13 +65,97 @@ class ErrorResponse(BaseModel):
     details: Optional[str] = None
 
 
+# --- Dashboard Models ---
+
+class WalletInfo(BaseModel):
+    balance_tokens: int
+    currency: str
+    last_updated: Optional[datetime]
+
+
+class PlanInfo(BaseModel):
+    name: str
+    interval: str
+    price_cents: int
+    tokens_per_period: int
+    features: Optional[Dict[str, Any]] = None
+
+
+class SubscriptionInfo(BaseModel):
+    status: str
+    plan: PlanInfo
+    current_period_start: Optional[datetime]
+    current_period_end: Optional[datetime]
+
+
+class DashboardApplication(BaseModel):
+    id: str
+    scholarship_url: str
+    status: str
+    match_score: Optional[float]
+    had_interview: bool
+    created_at: datetime
+
+
+class DashboardInterview(BaseModel):
+    id: str
+    current_target: Optional[str]
+    created_at: datetime
+    completed_at: Optional[datetime]
+
+
+class DashboardWorkflow(BaseModel):
+    id: str
+    scholarship_url: str
+    status: str
+    match_score: Optional[float]
+    created_at: datetime
+    updated_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    applications: List[DashboardApplication]
+    interview_session: Optional[DashboardInterview]
+
+
+class DashboardResume(BaseModel):
+    id: str
+    filename: str
+    file_size_bytes: int
+    created_at: datetime
+    text_preview: Optional[str]
+    workflow_sessions: List[DashboardWorkflow]
+
+
+class UsageStats(BaseModel):
+    queries_today: int
+    queries_month: int
+    tokens_used_today: int
+    tokens_used_month: int
+
+
+class ActivityItem(BaseModel):
+    type: str
+    ref_id: str
+    description: str
+    timestamp: datetime
+    amount: Optional[int] = None
+
+
+class UserInfo(BaseModel):
+    id: str
+    email: Optional[str] = None
+
+
 class DashboardResponse(BaseModel):
     """Dashboard data response model"""
-    user_id: Optional[str]
-    stats: Dict[str, Any]
-    applications: List[Dict[str, Any]]
-    resumes: List[Dict[str, Any]]
-    active_workflows: List[Dict[str, Any]]
+    user: UserInfo
+    wallet: Optional[WalletInfo]
+    subscription: Optional[SubscriptionInfo]
+    resume_sessions: List[DashboardResume]
+    usage: UsageStats
+    recent_activity: List[ActivityItem]
+
+
+# ... (FastAPI Application setup remains same) ...
 
 
 # ==================== FastAPI Application ====================
@@ -516,74 +603,149 @@ async def get_dashboard_data(
 ):
     """Get aggregated dashboard data for a user"""
     try:
+        if not x_user_id:
+            # For demo purposes, if no user_id, use a default test user
+            x_user_id = "test_user_demo"
+        
         print(f"📊 [API] Fetching dashboard data for user: {x_user_id}")
         
-        # 1. Get Applications
-        applications = ApplicationOperations.get_all(db, user_id=x_user_id)
-        app_list = [
-            {
-                "id": app.id,
-                "workflow_session_id": app.workflow_session_id,
-                "scholarship_url": app.scholarship_url,
-                "status": app.status,
-                "match_score": app.match_score,
-                "had_interview": app.had_interview,
-                "created_at": app.created_at.isoformat()
-            }
-            for app in applications
-        ]
+        # 1. Get/Create User & Wallet
+        user = UserOperations.create_if_not_exists(db, x_user_id)
         
-        # 2. Get Resumes
+        # 2. Build Wallet Info
+        wallet_info = None
+        if user.wallet:
+            wallet_info = WalletInfo(
+                balance_tokens=user.wallet.balance_tokens,
+                currency=user.wallet.currency,
+                last_updated=user.wallet.updated_at
+            )
+            
+        # 3. Build Subscription Info
+        sub_info = None
+        if user.subscriptions:
+            # Get active subscription
+            active_sub = next((s for s in user.subscriptions if s.status == "active"), None)
+            if active_sub and active_sub.plan:
+                sub_info = SubscriptionInfo(
+                    status=active_sub.status,
+                    plan=PlanInfo(
+                        name=active_sub.plan.name,
+                        interval=active_sub.plan.interval,
+                        price_cents=active_sub.plan.price_cents,
+                        tokens_per_period=active_sub.plan.tokens_per_period,
+                        features=active_sub.plan.features
+                    ),
+                    current_period_start=active_sub.current_period_start,
+                    current_period_end=active_sub.current_period_end
+                )
+        
+        # 4. Build Nested Resumes -> Workflows -> Applications/Interviews
         resumes = ResumeSessionOperations.get_all(db, user_id=x_user_id)
-        resume_list = [
-            {
-                "id": resume.id,
-                "filename": resume.filename,
-                "created_at": resume.created_at.isoformat(),
-                "file_size_bytes": resume.file_size_bytes
-            }
-            for resume in resumes
-        ]
+        dashboard_resumes = []
         
-        # 3. Get Active Workflows (processing or waiting_for_input)
-        # We fetch all and filter in memory for simplicity, or could add specific DB query
-        all_workflows = WorkflowSessionOperations.get_all(db, user_id=x_user_id)
-        active_workflows = [
-            {
-                "id": wf.id,
-                "status": wf.status,
-                "scholarship_url": wf.scholarship_url,
-                "created_at": wf.created_at.isoformat(),
-                "updated_at": wf.updated_at.isoformat() if wf.updated_at else None
-            }
-            for wf in all_workflows
-            if wf.status in ["processing", "waiting_for_input", "processing_resume"]
-        ]
+        for resume in resumes:
+            # Get workflows for this resume
+            workflows = WorkflowSessionOperations.get_by_resume_session(db, resume.id)
+            dashboard_workflows = []
+            
+            for wf in workflows:
+                # Get applications for this workflow
+                app = ApplicationOperations.get_by_workflow_session(db, wf.id)
+                dash_apps = []
+                if app:
+                    dash_apps.append(DashboardApplication(
+                        id=app.id,
+                        scholarship_url=app.scholarship_url,
+                        status=app.status,
+                        match_score=app.match_score,
+                        had_interview=app.had_interview,
+                        created_at=app.created_at
+                    ))
+                
+                # Get interview for this workflow
+                interview = InterviewSessionOperations.get_by_workflow(db, wf.id)
+                dash_interview = None
+                if interview:
+                    dash_interview = DashboardInterview(
+                        id=interview.id,
+                        current_target=interview.current_target,
+                        created_at=interview.created_at,
+                        completed_at=interview.completed_at
+                    )
+                
+                dashboard_workflows.append(DashboardWorkflow(
+                    id=wf.id,
+                    scholarship_url=wf.scholarship_url,
+                    status=wf.status,
+                    match_score=wf.match_score,
+                    created_at=wf.created_at,
+                    updated_at=wf.updated_at,
+                    completed_at=wf.completed_at,
+                    applications=dash_apps,
+                    interview_session=dash_interview
+                ))
+            
+            dashboard_resumes.append(DashboardResume(
+                id=resume.id,
+                filename=resume.filename,
+                file_size_bytes=resume.file_size_bytes,
+                created_at=resume.created_at,
+                text_preview=resume.text_preview,
+                workflow_sessions=dashboard_workflows
+            ))
+            
+        # 5. Get Usage Stats
+        usage_stats = UsageRecordOperations.get_stats(db, x_user_id)
         
-        # 4. Calculate Stats
-        total_apps = len(app_list)
-        total_interviews = sum(1 for app in app_list if app.get("had_interview"))
-        avg_score = 0
-        if total_apps > 0:
-            scores = [app.get("match_score") for app in app_list if app.get("match_score") is not None]
-            if scores:
-                avg_score = sum(scores) / len(scores)
+        # 6. Get Recent Activity
+        activity_items = []
+        
+        # Add recent transactions
+        transactions = WalletTransactionOperations.get_recent(db, x_user_id, limit=5)
+        for tx in transactions:
+            desc_text = f"{tx.kind.capitalize()} transaction"
+            if tx.kind == 'deduction':
+                desc_text = f"Used tokens for {tx.reference_id or 'service'}"
+            elif tx.kind == 'purchase':
+                desc_text = "Purchased tokens"
+                
+            activity_items.append(ActivityItem(
+                type=f"transaction_{tx.kind}",
+                ref_id=tx.id,
+                description=desc_text,
+                timestamp=tx.created_at,
+                amount=tx.amount
+            ))
+            
+        # Add recent completed workflows
+        recent_workflows = WorkflowSessionOperations.get_all(db, user_id=x_user_id, limit=5)
+        for wf in recent_workflows:
+            if wf.status == "complete":
+                activity_items.append(ActivityItem(
+                    type="workflow_completed",
+                    ref_id=wf.id,
+                    description=f"Completed workflow for scholarship",
+                    timestamp=wf.completed_at or wf.updated_at
+                ))
+        
+        # Sort combined activity by timestamp desc
+        activity_items.sort(key=lambda x: x.timestamp, reverse=True)
+        activity_items = activity_items[:10] # Keep top 10
         
         return DashboardResponse(
-            user_id=x_user_id,
-            stats={
-                "total_applications": total_apps,
-                "total_interviews": total_interviews,
-                "average_match_score": round(avg_score, 1),
-                "active_workflows_count": len(active_workflows)
-            },
-            applications=app_list,
-            resumes=resume_list,
-            active_workflows=active_workflows
+            user=UserInfo(id=user.id, email=user.email),
+            wallet=wallet_info,
+            subscription=sub_info,
+            resume_sessions=dashboard_resumes,
+            usage=UsageStats(**usage_stats),
+            recent_activity=activity_items
         )
         
     except Exception as e:
         print(f"❌ [API] Error fetching dashboard data: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching dashboard data: {str(e)}"
@@ -1111,6 +1273,204 @@ async def global_exception_handler(request, exc):
         }
     )
 
+
+
+# ==================== Stripe/Billing Endpoints ====================
+
+@app.get("/api/billing/plans")
+async def get_billing_plans(db: Session = Depends(get_db)):
+    """Get available billing plans"""
+    try:
+        from workflows.database import BillingPlan
+        
+        plans = db.query(BillingPlan).all()
+        
+        return {
+            "plans": [
+                {
+                    "id": plan.id,
+                    "slug": plan.slug,
+                    "name": plan.name,
+                    "price_cents": plan.price_cents,
+                    "interval": plan.interval,
+                    "tokens_per_period": plan.tokens_per_period,
+                    "features": plan.features
+                }
+                for plan in plans
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching billing plans: {str(e)}"
+        )
+
+
+@app.post("/api/stripe/create-checkout-session")
+async def create_checkout_session(
+    plan_slug: str = Form(...),
+    success_url: str = Form(...),
+    cancel_url: str = Form(...),
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Create a Stripe checkout session"""
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID required"
+        )
+    
+    try:
+        from services.stripe_service import StripeService
+        
+        session_data = StripeService.create_checkout_session(
+            db=db,
+            user_id=x_user_id,
+            plan_slug=plan_slug,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+        
+        return session_data
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating checkout session: {str(e)}"
+        )
+
+
+@app.post("/api/stripe/create-portal-session")
+async def create_portal_session(
+    return_url: str = Form(...),
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Create a Stripe customer portal session"""
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID required"
+        )
+    
+    try:
+        from services.stripe_service import StripeService
+        
+        portal_url = StripeService.create_portal_session(
+            db=db,
+            user_id=x_user_id,
+            return_url=return_url
+        )
+        
+        return {"url": portal_url}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating portal session: {str(e)}"
+        )
+
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Handle Stripe webhook events"""
+    payload = await request.body()
+    sig_header = request.headers.get('stripe-signature')
+    
+    if not sig_header:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing stripe-signature header"
+        )
+    
+    try:
+        from services.stripe_service import StripeService
+        
+        result = StripeService.handle_webhook_event(
+            db=db,
+            payload=payload,
+            sig_header=sig_header
+        )
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Webhook processing error: {str(e)}"
+        )
+
+
+@app.post("/api/subscription/cancel")
+async def cancel_subscription(
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Cancel user's subscription"""
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID required"
+        )
+    
+    try:
+        from workflows.database import Subscription
+        import stripe
+        
+        # Get active subscription
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == x_user_id,
+            Subscription.status == 'active'
+        ).first()
+        
+        if not subscription:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No active subscription found"
+            )
+        
+        # Cancel at period end in Stripe
+        stripe.Subscription.modify(
+            subscription.external_subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        # Update local record
+        subscription.cancel_at_period_end = True
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Subscription will be canceled at period end",
+            "period_end": subscription.current_period_end.isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error canceling subscription: {str(e)}"
+        )
+
+
+# ==================== Main ====================
 
 if __name__ == "__main__":
     import uvicorn

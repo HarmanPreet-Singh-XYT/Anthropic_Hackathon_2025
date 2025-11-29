@@ -1,17 +1,68 @@
 "use client"
-import React, { useState } from 'react';
-import { 
-  Check, X, Sparkles, Zap, Brain, Target, Shield, 
-  ArrowRight, Moon, Sun, ChevronDown, HelpCircle, 
-  Database, Search, PenTool, Lock
+import React, { useState, useEffect } from 'react';
+import {
+  Check, X, Sparkles, Zap, Brain, Target, Shield,
+  ArrowRight, Moon, Sun, ChevronDown, Loader2
 } from 'lucide-react';
+import { getBillingPlans, createCheckoutSession, BillingPlan } from '@/lib/api';
 
 const PricingPage = () => {
   const [isAnnual, setIsAnnual] = useState(true);
-  const [isDark, setIsDark] = useState(true); // Toggle for demo purposes
+  const [isDark, setIsDark] = useState(true);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
+  const [plans, setPlans] = useState<BillingPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [userInfo, setUserInfo] = useState<any>(null);
 
-  // Toggle Dark Mode Wrapper
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        // Fetch user info
+        const userRes = await fetch('/api/logto/user');
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          setUserInfo(userData);
+        }
+
+        // Fetch billing plans
+        const plansData = await getBillingPlans();
+        setPlans(plansData.plans);
+      } catch (error) {
+        console.error('Failed to fetch pricing data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const handleSubscribe = async (planSlug: string) => {
+    if (!userInfo?.id) {
+      // Redirect to login
+      window.location.href = '/api/logto/sign-in';
+      return;
+    }
+
+    try {
+      setCheckoutLoading(planSlug);
+      const baseUrl = window.location.origin;
+      const { url } = await createCheckoutSession(
+        userInfo.id,
+        planSlug,
+        `${baseUrl}/dashboard?checkout=success`,
+        `${baseUrl}/pricing?checkout=canceled`
+      );
+      window.location.href = url;
+    } catch (error) {
+      console.error('Failed to create checkout session:', error);
+      alert('Failed to start checkout. Please try again.');
+      setCheckoutLoading(null);
+    }
+  };
+
   const toggleTheme = () => setIsDark(!isDark);
 
   const features = [
@@ -43,16 +94,20 @@ const PricingPage = () => {
 
   const faqs = [
     { q: "Is using AI for scholarships considered cheating?", a: "Not with ScholarFit. Unlike generic AI writers that fabricate content, our Interviewer Agent extracts your authentic life stories. We help you articulate your actual experiences better, acting as a coach and editor rather than a fake author." },
-    { q: "Can I cancel my subscription anytime?", a: "Absolutely. You can downgrade to the free Scout plan instantly from your dashboard. If you're on the annual plan, you'll retain access until the end of your billing cycle." },
+    { q: "Can I cancel my subscription anytime?", a: "Absolutely. You can cancel from your dashboard or the Stripe customer portal. Your subscription will remain active until the end of your billing cycle." },
     { q: "How secure is my personal data?", a: "We use enterprise-grade encryption. Your essays and resume data are stored in isolated vector environments and are never used to train public models. You own your IP." },
     { q: "Does this work for international students?", a: "Yes. The Scout Agent is configured to identify global opportunities and filter specifically for visa-status eligibility." },
   ];
 
+  // Find the pro plan for the highlighted card
+  const proPlan = plans.find(p => p.slug === 'pro');
+  const proPriceMonthly = proPlan ? (proPlan.price_cents / 100).toFixed(0) : '29';
+
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
       <div className="font-sans selection:bg-purple-500/30 selection:text-purple-600 dark:selection:text-purple-300 dark:text-slate-100 transition-colors duration-300">
-        
-        {/* Navbar Placeholder & Theme Toggle */}
+
+        {/* Navbar */}
         <nav className="fixed top-0 w-full z-50 border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl">
           <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2 font-black text-xl tracking-tighter">
@@ -61,7 +116,7 @@ const PricingPage = () => {
               </div>
               <span className="text-slate-900 dark:text-white">ScholarFit<span className="text-purple-600">.ai</span></span>
             </div>
-            <button 
+            <button
               onClick={toggleTheme}
               className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
@@ -70,15 +125,14 @@ const PricingPage = () => {
           </div>
         </nav>
 
-        {/* Background Grid - The "Circuit" Look */}
+        {/* Background Grid */}
         <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.05]"
-             style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}
         />
 
         {/* Hero Section */}
         <div className="relative pt-32 pb-20 px-6 max-w-7xl mx-auto text-center">
-          
-          {/* Animated Badge */}
+
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 text-blue-700 dark:text-blue-300 text-xs font-bold font-mono tracking-wider animate-fade-in-up mb-8 hover:scale-105 transition-transform cursor-default">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -101,7 +155,7 @@ const PricingPage = () => {
           {/* Toggle Switch */}
           <div className="flex items-center justify-center gap-4 mb-16 select-none">
             <span className={`text-sm font-bold ${!isAnnual ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>Monthly</span>
-            <button 
+            <button
               onClick={() => setIsAnnual(!isAnnual)}
               className="relative w-16 h-9 bg-slate-200 dark:bg-slate-700 rounded-full p-1 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors"
             >
@@ -116,85 +170,105 @@ const PricingPage = () => {
         </div>
 
         {/* Pricing Cards */}
-        <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-3 gap-8 relative z-10">
-          
-          {/* Card 1: The Scout */}
-          <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-3xl p-8 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <Target className="w-6 h-6 text-slate-600 dark:text-slate-400" />
-            </div>
-            <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white mb-2">The Scout</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 h-10">Essential tools for students just starting the discovery phase.</p>
-            <div className="flex items-baseline gap-1 mb-8">
-              <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">$0</span>
-              <span className="text-slate-400 font-mono">/forever</span>
-            </div>
-            <button className="w-full py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-8">
-              Start Free
-            </button>
-            <ul className="space-y-4 text-sm">
-              <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-slate-400 flex-shrink-0" /> Scout Agent Access</li>
-              <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-slate-400 flex-shrink-0" /> Resume Parsing</li>
-              <li className="flex gap-3 text-slate-400 dark:text-slate-600"><X className="w-5 h-5 flex-shrink-0" /> No Essay Generation</li>
-            </ul>
+        {loading ? (
+          <div className="max-w-7xl mx-auto px-6 py-20 flex justify-center">
+            <Loader2 className="w-10 h-10 animate-spin text-purple-600" />
           </div>
+        ) : (
+          <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-3 gap-8 relative z-10">
 
-          {/* Card 2: The Scholar (Highlighted) */}
-          <div className="bg-slate-900 dark:bg-slate-950 border border-purple-500/30 rounded-3xl p-8 relative overflow-hidden transform md:-translate-y-4 shadow-2xl shadow-purple-500/20">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
-            <div className="absolute top-6 right-6">
-              <span className="bg-purple-500/20 text-purple-300 text-xs font-bold px-3 py-1 rounded-full border border-purple-500/30 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> POPULAR
-              </span>
+            {/* Card 1: Free Plan */}
+            <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-3xl p-8 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Target className="w-6 h-6 text-slate-600 dark:text-slate-400" />
+              </div>
+              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white mb-2">The Scout</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 h-10">Essential tools for students just starting the discovery phase.</p>
+              <div className="flex items-baseline gap-1 mb-8">
+                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">$0</span>
+                <span className="text-slate-400 font-mono">/forever</span>
+              </div>
+              <button
+                onClick={() => window.location.href = '/dashboard'}
+                className="w-full py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-8"
+              >
+                Start Free
+              </button>
+              <ul className="space-y-4 text-sm">
+                <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-slate-400 flex-shrink-0" /> Scout Agent Access</li>
+                <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-slate-400 flex-shrink-0" /> Resume Parsing</li>
+                <li className="flex gap-3 text-slate-400 dark:text-slate-600"><X className="w-5 h-5 flex-shrink-0" /> No Essay Generation</li>
+              </ul>
             </div>
-            
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mb-6 shadow-lg shadow-purple-500/30">
-              <Brain className="w-6 h-6 text-white" />
+
+            {/* Card 2: Pro Plan (Highlighted) */}
+            <div className="bg-slate-900 dark:bg-slate-950 border border-purple-500/30 rounded-3xl p-8 relative overflow-hidden transform md:-translate-y-4 shadow-2xl shadow-purple-500/20">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+              <div className="absolute top-6 right-6">
+                <span className="bg-purple-500/20 text-purple-300 text-xs font-bold px-3 py-1 rounded-full border border-purple-500/30 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> POPULAR
+                </span>
+              </div>
+
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mb-6 shadow-lg shadow-purple-500/30">
+                <Brain className="w-6 h-6 text-white" />
+              </div>
+
+              <h3 className="text-xl font-black tracking-tight text-white mb-2">The Scholar</h3>
+              <p className="text-sm text-slate-400 mb-6 h-10">Complete AI suite to dominate the application process.</p>
+
+              <div className="flex items-baseline gap-1 mb-8">
+                <span className="text-5xl font-black text-white tracking-tighter">${proPriceMonthly}</span>
+                <span className="text-slate-500 font-mono">/mo</span>
+              </div>
+
+              <button
+                onClick={() => proPlan && handleSubscribe(proPlan.slug)}
+                disabled={checkoutLoading === 'pro'}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold shadow-lg shadow-purple-900/50 hover:shadow-purple-500/40 hover:scale-[1.02] transition-all mb-8 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {checkoutLoading === 'pro' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  'Get Started Now'
+                )}
+              </button>
+
+              <ul className="space-y-4 text-sm">
+                <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> Unlimited RAG Matching</li>
+                <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> Interviewer Agent (Deep)</li>
+                <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> {proPlan?.tokens_per_period || 2000} AI Credits/mo</li>
+                <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> Claude 3.5 Sonnet Model</li>
+              </ul>
             </div>
-            
-            <h3 className="text-xl font-black tracking-tight text-white mb-2">The Scholar</h3>
-            <p className="text-sm text-slate-400 mb-6 h-10">Complete AI suite to dominate the application process.</p>
-            
-            <div className="flex items-baseline gap-1 mb-8">
-              <span className="text-5xl font-black text-white tracking-tighter">${isAnnual ? '29' : '39'}</span>
-              <span className="text-slate-500 font-mono">/mo</span>
+
+            {/* Card 3: Enterprise/Waitlist */}
+            <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-3xl p-8 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Zap className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white mb-2">The Laureate</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 h-10">Maximum velocity for Ivy League & Prestigious grants.</p>
+              <div className="flex items-baseline gap-1 mb-8">
+                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">$99</span>
+                <span className="text-slate-400 font-mono">/mo</span>
+              </div>
+              <button className="w-full py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-8">
+                Join Waitlist
+              </button>
+              <ul className="space-y-4 text-sm">
+                <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-emerald-500 flex-shrink-0" /> Unlimited Ghostwriter</li>
+                <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-emerald-500 flex-shrink-0" /> Human-in-Loop Review</li>
+                <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-emerald-500 flex-shrink-0" /> Priority Processing</li>
+              </ul>
             </div>
-            
-            <button className="w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold shadow-lg shadow-purple-900/50 hover:shadow-purple-500/40 hover:scale-[1.02] transition-all mb-8">
-              Get Started Now
-            </button>
-            
-            <ul className="space-y-4 text-sm">
-              <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> Unlimited RAG Matching</li>
-              <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> Interviewer Agent (Deep)</li>
-              <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> 10 Ghostwritten Essays</li>
-              <li className="flex gap-3 text-white"><div className="bg-green-500/20 rounded-full p-0.5"><Check className="w-3.5 h-3.5 text-green-400" strokeWidth={3} /></div> Claude 3.5 Sonnet Model</li>
-            </ul>
           </div>
+        )}
 
-          {/* Card 3: The Laureate */}
-          <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-3xl p-8 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <Zap className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white mb-2">The Laureate</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 h-10">Maximum velocity for Ivy League & Prestigious grants.</p>
-            <div className="flex items-baseline gap-1 mb-8">
-              <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">${isAnnual ? '79' : '99'}</span>
-              <span className="text-slate-400 font-mono">/mo</span>
-            </div>
-            <button className="w-full py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-8">
-              Join Waitlist
-            </button>
-            <ul className="space-y-4 text-sm">
-              <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-emerald-500 flex-shrink-0" /> Unlimited Ghostwriter</li>
-              <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-emerald-500 flex-shrink-0" /> Human-in-Loop Review</li>
-              <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-emerald-500 flex-shrink-0" /> Priority Processing</li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Deep Dive Feature Matrix */}
+        {/* Feature Matrix */}
         <div className="max-w-7xl mx-auto px-6 py-24">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-4">
@@ -262,18 +336,18 @@ const PricingPage = () => {
           </h2>
           <div className="space-y-4">
             {faqs.map((faq, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
               >
-                <button 
+                <button
                   onClick={() => setActiveFaq(activeFaq === idx ? null : idx)}
                   className="w-full flex items-center justify-between p-6 text-left"
                 >
                   <span className="font-bold text-slate-900 dark:text-white pr-8">{faq.q}</span>
                   <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${activeFaq === idx ? 'rotate-180' : ''}`} />
                 </button>
-                                <div 
+                <div
                   className={`overflow-hidden transition-all duration-300 ease-in-out ${activeFaq === idx ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'}`}
                 >
                   <p className="px-6 pb-6 text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800/50 pt-4">
@@ -285,17 +359,14 @@ const PricingPage = () => {
           </div>
         </div>
 
-        {/* Footer - Circuit Board Theme */}
+        {/* Footer */}
         <footer className="relative bg-slate-950 text-slate-400 overflow-hidden border-t border-slate-800 mt-20">
-          
-          {/* Circuit Board Pattern Background */}
           <div className="absolute inset-0 opacity-[0.05]"
-             style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E")` }}
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E")` }}
           />
 
           <div className="relative max-w-7xl mx-auto px-6 py-16 grid grid-cols-2 md:grid-cols-4 gap-12 text-sm">
-            
-            {/* Brand Column */}
+
             <div className="col-span-2 md:col-span-1 space-y-4">
               <div className="flex items-center gap-2 font-black text-white tracking-tighter">
                 <Brain className="w-5 h-5 text-purple-500" />
@@ -304,18 +375,8 @@ const PricingPage = () => {
               <p className="text-slate-500 leading-relaxed">
                 Transforming scholarship applications through intelligent narrative alignment and multi-agent orchestration.
               </p>
-              <div className="flex gap-4 pt-2">
-                 {/* Social Placeholders */}
-                 <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center hover:border-purple-500 hover:text-white transition-colors cursor-pointer">
-                    <span className="font-bold">X</span>
-                 </div>
-                 <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center hover:border-blue-500 hover:text-white transition-colors cursor-pointer">
-                    <span className="font-bold">in</span>
-                 </div>
-              </div>
             </div>
 
-            {/* Product Column */}
             <div>
               <h4 className="font-bold text-white mb-6 uppercase tracking-wider font-mono text-xs">Platform</h4>
               <ul className="space-y-3">
@@ -328,7 +389,6 @@ const PricingPage = () => {
               </ul>
             </div>
 
-            {/* Resources Column */}
             <div>
               <h4 className="font-bold text-white mb-6 uppercase tracking-wider font-mono text-xs">Resources</h4>
               <ul className="space-y-3">
@@ -339,7 +399,6 @@ const PricingPage = () => {
               </ul>
             </div>
 
-            {/* Legal Column */}
             <div>
               <h4 className="font-bold text-white mb-6 uppercase tracking-wider font-mono text-xs">Legal</h4>
               <ul className="space-y-3">
@@ -351,7 +410,6 @@ const PricingPage = () => {
             </div>
           </div>
 
-          {/* Sub-footer */}
           <div className="relative border-t border-slate-800/50">
             <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between items-center gap-4">
               <p className="text-slate-600 text-xs">

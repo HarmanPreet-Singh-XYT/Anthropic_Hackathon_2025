@@ -749,3 +749,92 @@ class ApplicationOperations:
             "without_interview": (total or 0) - (with_interview or 0),
             "average_match_score": float(avg_score) if avg_score else 0.0
         }
+
+
+class UserOperations:
+    """CRUD operations for users"""
+    
+    @staticmethod
+    def get(db: Session, user_id: str):
+        """Get user by ID with related data"""
+        from .database import User
+        return db.query(User).filter(User.id == user_id).first()
+    
+    @staticmethod
+    def create_if_not_exists(db: Session, user_id: str, email: Optional[str] = None):
+        """Create user if not exists"""
+        from .database import User, UserWallet
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            user = User(id=user_id, email=email)
+            db.add(user)
+            
+            # Create default wallet
+            wallet = UserWallet(user_id=user_id, balance_tokens=100) # Default 100 tokens
+            db.add(wallet)
+            
+            db.commit()
+            db.refresh(user)
+        return user
+
+
+class UsageRecordOperations:
+    """CRUD operations for usage records"""
+    
+    @staticmethod
+    def get_stats(db: Session, user_id: str) -> Dict[str, int]:
+        """Get usage statistics for a user"""
+        from .database import UsageRecord
+        from sqlalchemy import func
+        from datetime import datetime, timedelta
+        
+        now = datetime.utcnow()
+        start_of_day = datetime(now.year, now.month, now.day)
+        start_of_month = datetime(now.year, now.month, 1)
+        
+        # Queries today
+        queries_today = db.query(func.count(UsageRecord.id))\
+            .filter(UsageRecord.user_id == user_id)\
+            .filter(UsageRecord.created_at >= start_of_day)\
+            .scalar() or 0
+            
+        # Queries month
+        queries_month = db.query(func.count(UsageRecord.id))\
+            .filter(UsageRecord.user_id == user_id)\
+            .filter(UsageRecord.created_at >= start_of_month)\
+            .scalar() or 0
+            
+        # Tokens today
+        tokens_today = db.query(func.sum(UsageRecord.tokens_used))\
+            .filter(UsageRecord.user_id == user_id)\
+            .filter(UsageRecord.created_at >= start_of_day)\
+            .scalar() or 0
+            
+        # Tokens month
+        tokens_month = db.query(func.sum(UsageRecord.tokens_used))\
+            .filter(UsageRecord.user_id == user_id)\
+            .filter(UsageRecord.created_at >= start_of_month)\
+            .scalar() or 0
+            
+        return {
+            "queries_today": queries_today,
+            "queries_month": queries_month,
+            "tokens_used_today": int(tokens_today),
+            "tokens_used_month": int(tokens_month)
+        }
+
+
+class WalletTransactionOperations:
+    """CRUD operations for wallet transactions"""
+    
+    @staticmethod
+    def get_recent(db: Session, user_id: str, limit: int = 10) -> List[Any]:
+        """Get recent transactions"""
+        from .database import WalletTransaction
+        
+        return db.query(WalletTransaction)\
+            .filter(WalletTransaction.user_id == user_id)\
+            .order_by(desc(WalletTransaction.created_at))\
+            .limit(limit)\
+            .all()

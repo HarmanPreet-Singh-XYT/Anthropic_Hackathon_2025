@@ -71,6 +71,11 @@ class Settings:
             "http://localhost:3000,http://localhost:3001"
         ).split(",")
 
+        # Stripe Configuration
+        self.stripe_secret_key: str = os.getenv("STRIPE_SECRET_KEY", "")
+        self.stripe_publishable_key: str = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+        self.stripe_webhook_secret: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
         # Ensure directories exist
         self._create_directories()
 
