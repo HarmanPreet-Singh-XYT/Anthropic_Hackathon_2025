@@ -24,7 +24,8 @@ class WorkflowSessionOperations:
         db: Session,
         session_id: str,
         scholarship_url: str,
-        resume_session_id: Optional[str] = None
+        resume_session_id: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> WorkflowSession:
         """
         Create a new workflow session
@@ -41,6 +42,7 @@ class WorkflowSessionOperations:
         workflow = WorkflowSession(
             id=session_id,
             resume_session_id=resume_session_id,
+            user_id=user_id,
             status="processing",
             scholarship_url=scholarship_url
         )
@@ -64,7 +66,7 @@ class WorkflowSessionOperations:
         return db.query(WorkflowSession).filter(WorkflowSession.id == session_id).first()
     
     @staticmethod
-    def get_all(db: Session, limit: int = 100, offset: int = 0) -> List[WorkflowSession]:
+    def get_all(db: Session, limit: int = 100, offset: int = 0, user_id: Optional[str] = None) -> List[WorkflowSession]:
         """
         Get all workflow sessions with pagination
         
@@ -72,11 +74,16 @@ class WorkflowSessionOperations:
             db: Database session
             limit: Maximum number of results
             offset: Number of results to skip
+            user_id: Optional user ID filter
             
         Returns:
             List of WorkflowSession objects
         """
-        return db.query(WorkflowSession)\
+        query = db.query(WorkflowSession)
+        if user_id:
+            query = query.filter(WorkflowSession.user_id == user_id)
+            
+        return query\
             .order_by(desc(WorkflowSession.created_at))\
             .limit(limit)\
             .offset(offset)\
@@ -263,7 +270,8 @@ class ResumeSessionOperations:
         filename: str,
         file_size_bytes: int,
         chunks_stored: int,
-        text_preview: Optional[str] = None
+        text_preview: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> ResumeSession:
         """
         Create a new resume session
@@ -281,6 +289,7 @@ class ResumeSessionOperations:
         """
         resume = ResumeSession(
             id=session_id,
+            user_id=user_id,
             filename=filename,
             file_size_bytes=file_size_bytes,
             chunks_stored=chunks_stored,
@@ -306,7 +315,7 @@ class ResumeSessionOperations:
         return db.query(ResumeSession).filter(ResumeSession.id == session_id).first()
     
     @staticmethod
-    def get_all(db: Session, limit: int = 100, offset: int = 0) -> List[ResumeSession]:
+    def get_all(db: Session, limit: int = 100, offset: int = 0, user_id: Optional[str] = None) -> List[ResumeSession]:
         """
         Get all resume sessions with pagination
         
@@ -314,11 +323,16 @@ class ResumeSessionOperations:
             db: Database session
             limit: Maximum number of results
             offset: Number of results to skip
+            user_id: Optional user ID filter
             
         Returns:
             List of ResumeSession objects
         """
-        return db.query(ResumeSession)\
+        query = db.query(ResumeSession)
+        if user_id:
+            query = query.filter(ResumeSession.user_id == user_id)
+            
+        return query\
             .order_by(desc(ResumeSession.created_at))\
             .limit(limit)\
             .offset(offset)\
@@ -562,7 +576,8 @@ class ApplicationOperations:
         resume_session_id: str,
         scholarship_url: str,
         match_score: Optional[float] = None,
-        had_interview: bool = False
+        had_interview: bool = False,
+        user_id: Optional[str] = None
     ) -> Application:
         """
         Create a new application record
@@ -581,6 +596,7 @@ class ApplicationOperations:
         app = Application(
             workflow_session_id=workflow_session_id,
             resume_session_id=resume_session_id,
+            user_id=user_id,
             scholarship_url=scholarship_url,
             status="complete",
             match_score=match_score,
@@ -606,7 +622,7 @@ class ApplicationOperations:
         return db.query(Application).filter(Application.id == application_id).first()
     
     @staticmethod
-    def get_all(db: Session, limit: int = 100, offset: int = 0) -> List[Application]:
+    def get_all(db: Session, limit: int = 100, offset: int = 0, user_id: Optional[str] = None) -> List[Application]:
         """
         Get all applications with pagination
         
@@ -614,11 +630,16 @@ class ApplicationOperations:
             db: Database session
             limit: Maximum number of results
             offset: Number of results to skip
+            user_id: Optional user ID filter
             
         Returns:
             List of Application objects
         """
-        return db.query(Application)\
+        query = db.query(Application)
+        if user_id:
+            query = query.filter(Application.user_id == user_id)
+            
+        return query\
             .order_by(desc(Application.created_at))\
             .limit(limit)\
             .offset(offset)\

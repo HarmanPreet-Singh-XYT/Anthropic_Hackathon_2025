@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, status, Form, BackgroundTasks, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -60,6 +60,15 @@ class ErrorResponse(BaseModel):
     """Error response model"""
     error: str
     details: Optional[str] = None
+
+
+class DashboardResponse(BaseModel):
+    """Dashboard data response model"""
+    user_id: Optional[str]
+    stats: Dict[str, Any]
+    applications: List[Dict[str, Any]]
+    resumes: List[Dict[str, Any]]
+    active_workflows: List[Dict[str, Any]]
 
 
 # ==================== FastAPI Application ====================
@@ -208,7 +217,8 @@ async def health_check(db: Session = Depends(get_db)):
 @app.post("/api/upload-resume", response_model=UploadResponse)
 async def upload_resume(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
 ):
     """Upload and process a resume PDF"""
     
@@ -283,7 +293,8 @@ async def upload_resume(
             filename=file.filename,
             file_size_bytes=file_size,
             chunks_stored=result.get("chunks_stored", 0),
-            text_preview=text_preview
+            text_preview=text_preview,
+            user_id=x_user_id
         )
         
         print(f"✓ [API] Resume processed and stored in DB for session: {session_id}")
@@ -461,7 +472,8 @@ async def validate_resume_session(
 @app.get("/api/applications/history/{resume_session_id}")
 async def get_application_history(
     resume_session_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
 ):
     """Get all applications for a resume session"""
     try:
@@ -497,13 +509,95 @@ async def get_application_history(
         )
 
 
+@app.get("/api/dashboard", response_model=DashboardResponse)
+async def get_dashboard_data(
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get aggregated dashboard data for a user"""
+    try:
+        print(f"📊 [API] Fetching dashboard data for user: {x_user_id}")
+        
+        # 1. Get Applications
+        applications = ApplicationOperations.get_all(db, user_id=x_user_id)
+        app_list = [
+            {
+                "id": app.id,
+                "workflow_session_id": app.workflow_session_id,
+                "scholarship_url": app.scholarship_url,
+                "status": app.status,
+                "match_score": app.match_score,
+                "had_interview": app.had_interview,
+                "created_at": app.created_at.isoformat()
+            }
+            for app in applications
+        ]
+        
+        # 2. Get Resumes
+        resumes = ResumeSessionOperations.get_all(db, user_id=x_user_id)
+        resume_list = [
+            {
+                "id": resume.id,
+                "filename": resume.filename,
+                "created_at": resume.created_at.isoformat(),
+                "file_size_bytes": resume.file_size_bytes
+            }
+            for resume in resumes
+        ]
+        
+        # 3. Get Active Workflows (processing or waiting_for_input)
+        # We fetch all and filter in memory for simplicity, or could add specific DB query
+        all_workflows = WorkflowSessionOperations.get_all(db, user_id=x_user_id)
+        active_workflows = [
+            {
+                "id": wf.id,
+                "status": wf.status,
+                "scholarship_url": wf.scholarship_url,
+                "created_at": wf.created_at.isoformat(),
+                "updated_at": wf.updated_at.isoformat() if wf.updated_at else None
+            }
+            for wf in all_workflows
+            if wf.status in ["processing", "waiting_for_input", "processing_resume"]
+        ]
+        
+        # 4. Calculate Stats
+        total_apps = len(app_list)
+        total_interviews = sum(1 for app in app_list if app.get("had_interview"))
+        avg_score = 0
+        if total_apps > 0:
+            scores = [app.get("match_score") for app in app_list if app.get("match_score") is not None]
+            if scores:
+                avg_score = sum(scores) / len(scores)
+        
+        return DashboardResponse(
+            user_id=x_user_id,
+            stats={
+                "total_applications": total_apps,
+                "total_interviews": total_interviews,
+                "average_match_score": round(avg_score, 1),
+                "active_workflows_count": len(active_workflows)
+            },
+            applications=app_list,
+            resumes=resume_list,
+            active_workflows=active_workflows
+        )
+        
+    except Exception as e:
+        print(f"❌ [API] Error fetching dashboard data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching dashboard data: {str(e)}"
+        )
+
+
 # ==================== Scout Workflow Endpoints ====================
 
 @app.post("/api/scout/start")
 async def start_scout_workflow(
     background_tasks: BackgroundTasks,
     scholarship_url: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
 ):
     """Start Scout agent workflow"""
     session_id = str(uuid.uuid4())
@@ -512,7 +606,8 @@ async def start_scout_workflow(
     WorkflowSessionOperations.create(
         db=db,
         session_id=session_id,
-        scholarship_url=scholarship_url
+        scholarship_url=scholarship_url,
+        user_id=x_user_id
     )
     
     async def run_scout_background():
@@ -573,7 +668,8 @@ async def start_workflow(
     resume_session_id: str = Form(...),
     resume_file: Optional[UploadFile] = File(None),
     resume_path: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
 ):
     """Start the full ScholarFit AI workflow"""
     
@@ -604,7 +700,8 @@ async def start_workflow(
         db=db,
         session_id=workflow_session_id,
         scholarship_url=scholarship_url,
-        resume_session_id=resume_session_id
+        resume_session_id=resume_session_id,
+        user_id=x_user_id
     )
     
     async def run_workflow_background():
@@ -646,7 +743,8 @@ async def start_workflow(
                     resume_session_id=resume_session_id,
                     scholarship_url=scholarship_url,
                     match_score=final_state.get("match_score"),
-                    had_interview=False
+                    had_interview=False,
+                    user_id=x_user_id
                 )
             
             print(f"[Workflow] Completed {workflow_session_id}")
@@ -671,7 +769,8 @@ async def resume_workflow(
     background_tasks: BackgroundTasks,
     session_id: str = Form(...),
     bridge_story: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
 ):
     """Resume workflow after interview"""
     
@@ -714,7 +813,8 @@ async def resume_workflow(
                 resume_session_id=workflow.resume_session_id,
                 scholarship_url=workflow.scholarship_url,
                 match_score=final_state.get("match_score"),
-                had_interview=True
+                had_interview=True,
+                user_id=x_user_id
             )
             
             print(f"[Workflow] Completed resume {session_id}")

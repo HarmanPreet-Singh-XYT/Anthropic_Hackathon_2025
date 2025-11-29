@@ -18,6 +18,7 @@ class WorkflowSession(Base):
     __tablename__ = "workflow_sessions"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=True, index=True)
     resume_session_id = Column(String, ForeignKey("resume_sessions.id"), nullable=True)
     status = Column(String, nullable=False)  # processing, waiting_for_input, complete, error
     scholarship_url = Column(String, nullable=False)
@@ -52,6 +53,7 @@ class ResumeSession(Base):
     __tablename__ = "resume_sessions"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=True, index=True)
     filename = Column(String, nullable=False)
     file_size_bytes = Column(Integer, nullable=False)
     chunks_stored = Column(Integer, nullable=False)
@@ -94,6 +96,7 @@ class Application(Base):
     __tablename__ = "applications"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=True, index=True)
     workflow_session_id = Column(String, ForeignKey("workflow_sessions.id"), nullable=False)
     resume_session_id = Column(String, ForeignKey("resume_sessions.id"), nullable=False)
     

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ParticleBackground } from '@/components/ParticleBackground';
+import { uploadResume, startWorkflow, getWorkflowStatus } from '@/lib/api';
 
 export default function StartPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -24,6 +25,7 @@ export default function StartPage() {
     } | null>(null);
     const [useExistingResume, setUseExistingResume] = useState<boolean>(false);
     const [checkingSession, setCheckingSession] = useState<boolean>(true);
+    const [user, setUser] = useState<{ sub: string; email?: string; name?: string } | null>(null);
 
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -32,6 +34,12 @@ export default function StartPage() {
 
     // Check for existing resume session on mount
     useEffect(() => {
+        // Fetch user info
+        fetch('/api/logto/user')
+            .then(res => res.json())
+            .then(data => setUser(data))
+            .catch(() => setUser(null));
+
         const checkExistingSession = async () => {
             try {
                 // Check URL params first, then localStorage
@@ -135,6 +143,13 @@ export default function StartPage() {
     };
 
     const handleSubmit = async () => {
+        // Check authentication
+        if (!user) {
+            // Redirect to sign-in
+            window.location.href = '/api/logto/sign-in';
+            return;
+        }
+
         // Allow submission with only URL if using existing resume
         if (!useExistingResume && !file) return;
         if (!url) return;
@@ -164,17 +179,7 @@ export default function StartPage() {
                 const uploadFormData = new FormData();
                 uploadFormData.append('file', file);
 
-                const uploadResponse = await fetch(`${API_URL}/api/upload-resume`, {
-                    method: 'POST',
-                    body: uploadFormData,
-                });
-
-                if (!uploadResponse.ok) {
-                    const errorData = await uploadResponse.json();
-                    throw new Error(errorData.detail || 'Failed to upload resume');
-                }
-
-                const uploadData = await uploadResponse.json();
+                const uploadData = await uploadResume(file, user.sub);
                 resumeSessionId = uploadData.metadata.session_id;
 
                 console.log("[StartPage] Resume uploaded, session_id:", resumeSessionId);
@@ -197,17 +202,7 @@ export default function StartPage() {
             workflowFormData.append('scholarship_url', url);
             workflowFormData.append('resume_session_id', resumeSessionId);
 
-            const response = await fetch(`${API_URL}/api/workflow/start`, {
-                method: 'POST',
-                body: workflowFormData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Failed to start workflow');
-            }
-
-            const { session_id: workflowSessionId } = await response.json();
+            const { session_id: workflowSessionId } = await startWorkflow(url, resumeSessionId, user.sub);
             console.log("[StartPage] Workflow started");
             console.log(`  Resume session: ${resumeSessionId}`);
             console.log(`  Workflow session: ${workflowSessionId}`);
@@ -238,18 +233,10 @@ export default function StartPage() {
                     setProgressStatus('Finalizing analysis...');
                 }
 
-                const statusResponse = await fetch(
-                    `${API_URL}/api/workflow/status/${workflowSessionId}`
-                );
-
-                if (!statusResponse.ok) {
-                    throw new Error('Failed to check workflow status');
-                }
-
-                const statusData = await statusResponse.json();
+                const statusData = await getWorkflowStatus(workflowSessionId, user.sub);
                 console.log(`[StartPage] Poll #${pollCount}:`, statusData.status);
 
-                if (statusData.status === 'processing' || statusData.status === 'processing_resume') {
+                if (statusData.status === 'processing') {
                     continue;
                 } else if (statusData.status === 'complete' || statusData.status === 'waiting_for_input') {
                     console.log("[StartPage] Workflow reached target state:", statusData.status);
