@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from workflows.database import Base, ResumeSession, WorkflowSession, Application
+from database import Base, ResumeSession, WorkflowSession, Application
 from workflows.db_operations import ResumeSessionOperations, WorkflowSessionOperations, ApplicationOperations
 
 # Setup in-memory SQLite database

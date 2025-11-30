@@ -7,6 +7,7 @@ import {
   Calendar, ArrowUpRight, Sparkles, Layout, CreditCard, Loader2
 } from 'lucide-react';
 import { getDashboardData, DashboardResponse, DashboardApplication, DashboardWorkflow } from '@/lib/api';
+import { useAuthClient } from '@/hooks/useAuthClient';
 
 // --- MOCK DATA (For User, Wallet, Subscription) ---
 const mockUserData = {
@@ -85,22 +86,23 @@ const Dashboard = () => {
     }
   }, [searchParams]);
 
+  const { user, isLoading: isAuthLoading } = useAuthClient();
+
   useEffect(() => {
     const fetchData = async () => {
+      if (!user) return;
+
       try {
         setLoading(true);
-        // Fetch user ID first (similar to profile page)
-        const userRes = await fetch('/api/logto/user');
-        if (!userRes.ok) throw new Error('Failed to fetch user session');
-        const userData = await userRes.json();
-        setUserInfo(userData);
+        setUserInfo({
+          id: user.sub,
+          email: user.email,
+          name: user.name
+        });
 
-        if (userData.id) {
-          const data = await getDashboardData(userData.id);
-          setDashboardData(data);
-        } else {
-          throw new Error('User ID not found');
-        }
+        const data = await getDashboardData(user.sub);
+        console.log(data);
+        setDashboardData(data);
       } catch (err) {
         console.error("Dashboard fetch error:", err);
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
@@ -109,8 +111,15 @@ const Dashboard = () => {
       }
     };
 
-    fetchData();
-  }, []);
+    if (!isAuthLoading) {
+      if (user) {
+        fetchData();
+      } else {
+        // Not authenticated, loading is done (will be handled by auth redirect or empty state if needed)
+        setLoading(false);
+      }
+    }
+  }, [user, isAuthLoading]);
 
   if (loading) {
     return (

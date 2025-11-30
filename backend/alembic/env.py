@@ -5,14 +5,8 @@ from sqlalchemy import pool
 
 from alembic import context
 
-import os
-import sys
-
-# Add the project root to the python path
-sys.path.append(os.getcwd())
-
 # Import your models
-from workflows.database import Base
+from database import Base
 from config.settings import settings
 
 # this is the Alembic Config object

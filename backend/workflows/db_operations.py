@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from .database import (
+from database import (
     WorkflowSession, 
     ResumeSession, 
     InterviewSession, 
@@ -757,13 +757,13 @@ class UserOperations:
     @staticmethod
     def get(db: Session, user_id: str):
         """Get user by ID with related data"""
-        from .database import User
+        from database import User
         return db.query(User).filter(User.id == user_id).first()
     
     @staticmethod
     def create_if_not_exists(db: Session, user_id: str, email: Optional[str] = None):
         """Create user if not exists"""
-        from .database import User, UserWallet
+        from database import User, UserWallet
         
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -785,7 +785,7 @@ class UsageRecordOperations:
     @staticmethod
     def get_stats(db: Session, user_id: str) -> Dict[str, int]:
         """Get usage statistics for a user"""
-        from .database import UsageRecord
+        from database import UsageRecord
         from sqlalchemy import func
         from datetime import datetime, timedelta
         
@@ -831,7 +831,7 @@ class WalletTransactionOperations:
     @staticmethod
     def get_recent(db: Session, user_id: str, limit: int = 10) -> List[Any]:
         """Get recent transactions"""
-        from .database import WalletTransaction
+        from database import WalletTransaction
         
         return db.query(WalletTransaction)\
             .filter(WalletTransaction.user_id == user_id)\

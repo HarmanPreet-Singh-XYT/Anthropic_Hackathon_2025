@@ -323,6 +323,34 @@ export interface CancelSubscriptionResponse {
     period_end: string;
 }
 
+export interface BillingDetailsResponse {
+    subscription: SubscriptionInfo | null;
+    wallet: WalletInfo | null;
+    payment_history: Array<{
+        id: string;
+        amount_cents: number;
+        currency: string;
+        status: string;
+        date: string;
+        description: string;
+    }>;
+    transaction_history: Array<{
+        id: string;
+        amount: number;
+        type: string;
+        balance_after: number;
+        description: string;
+        date: string;
+    }>;
+    usage_history: Array<{
+        id: string;
+        feature: string;
+        amount: number;
+        cost_cents: number;
+        date: string;
+    }>;
+}
+
 /**
  * Get available billing plans
  * @returns List of available subscription plans
@@ -417,6 +445,26 @@ export async function cancelSubscription(userId: string): Promise<CancelSubscrip
     if (!response.ok) {
         const error: ErrorResponse = await response.json();
         throw new Error(error.detail || `Subscription cancellation failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+/**
+ * Get billing details for a user
+ * @param userId - Logto User ID
+ * @returns Billing details including subscription, wallet, and history
+ */
+export async function getBillingDetails(userId: string): Promise<BillingDetailsResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/billing/details`, {
+        headers: {
+            'x-user-id': userId,
+        },
+    });
+
+    if (!response.ok) {
+        const error: ErrorResponse = await response.json();
+        throw new Error(error.detail || `Billing details fetch failed with status ${response.status}`);
     }
 
     return response.json();

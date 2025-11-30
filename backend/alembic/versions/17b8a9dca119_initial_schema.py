@@ -1,8 +1,8 @@
-"""Add monetization models
+"""Initial schema
 
-Revision ID: 4ffd1c80abd4
-Revises: a1b2c3d4e5f6
-Create Date: 2025-11-29 11:33:59.851252
+Revision ID: 17b8a9dca119
+Revises: 
+Create Date: 2025-11-29 23:00:57.777204
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '4ffd1c80abd4'
-down_revision: Union[str, None] = 'a1b2c3d4e5f6'
+revision: str = '17b8a9dca119'
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -32,6 +32,17 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('slug')
     )
+    op.create_table('resume_sessions',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.String(), nullable=True),
+    sa.Column('filename', sa.String(), nullable=False),
+    sa.Column('file_size_bytes', sa.Integer(), nullable=False),
+    sa.Column('chunks_stored', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('text_preview', sa.Text(), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_resume_sessions_user_id'), 'resume_sessions', ['user_id'], unique=False)
     op.create_table('users',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('email', sa.String(), nullable=True),
@@ -97,6 +108,60 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('workflow_sessions',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.String(), nullable=True),
+    sa.Column('resume_session_id', sa.String(), nullable=True),
+    sa.Column('status', sa.String(), nullable=False),
+    sa.Column('scholarship_url', sa.String(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('completed_at', sa.DateTime(), nullable=True),
+    sa.Column('matchmaker_results', sa.JSON(), nullable=True),
+    sa.Column('essay_draft', sa.Text(), nullable=True),
+    sa.Column('resume_optimizations', sa.JSON(), nullable=True),
+    sa.Column('optimized_resume_markdown', sa.Text(), nullable=True),
+    sa.Column('strategy_note', sa.Text(), nullable=True),
+    sa.Column('match_score', sa.Float(), nullable=True),
+    sa.Column('gaps', sa.JSON(), nullable=True),
+    sa.Column('scholarship_intelligence', sa.JSON(), nullable=True),
+    sa.Column('error_message', sa.Text(), nullable=True),
+    sa.Column('state_checkpoint', sa.JSON(), nullable=True),
+    sa.ForeignKeyConstraint(['resume_session_id'], ['resume_sessions.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_workflow_sessions_user_id'), 'workflow_sessions', ['user_id'], unique=False)
+    op.create_table('applications',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.String(), nullable=True),
+    sa.Column('workflow_session_id', sa.String(), nullable=False),
+    sa.Column('resume_session_id', sa.String(), nullable=False),
+    sa.Column('scholarship_url', sa.String(), nullable=False),
+    sa.Column('status', sa.String(), nullable=False),
+    sa.Column('match_score', sa.Float(), nullable=True),
+    sa.Column('had_interview', sa.Boolean(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['resume_session_id'], ['resume_sessions.id'], ),
+    sa.ForeignKeyConstraint(['workflow_session_id'], ['workflow_sessions.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_applications_user_id'), 'applications', ['user_id'], unique=False)
+    op.create_table('interview_sessions',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('workflow_session_id', sa.String(), nullable=False),
+    sa.Column('gaps', sa.JSON(), nullable=False),
+    sa.Column('weighted_keywords', sa.JSON(), nullable=False),
+    sa.Column('gap_confidences', sa.JSON(), nullable=False),
+    sa.Column('prioritized_gaps', sa.JSON(), nullable=False),
+    sa.Column('current_target', sa.String(), nullable=True),
+    sa.Column('conversation_history', sa.JSON(), nullable=True),
+    sa.Column('collected_evidence', sa.JSON(), nullable=True),
+    sa.Column('bridge_story', sa.Text(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('completed_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['workflow_session_id'], ['workflow_sessions.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('subscription_payments',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('subscription_id', sa.String(), nullable=False),
@@ -108,29 +173,24 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['subscription_id'], ['subscriptions.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    # op.add_column('applications', sa.Column('user_id', sa.String(), nullable=True))
-    # op.create_index(op.f('ix_applications_user_id'), 'applications', ['user_id'], unique=False)
-    # op.add_column('resume_sessions', sa.Column('user_id', sa.String(), nullable=True))
-    # op.create_index(op.f('ix_resume_sessions_user_id'), 'resume_sessions', ['user_id'], unique=False)
-    # op.add_column('workflow_sessions', sa.Column('user_id', sa.String(), nullable=True))
-    # op.create_index(op.f('ix_workflow_sessions_user_id'), 'workflow_sessions', ['user_id'], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f('ix_workflow_sessions_user_id'), table_name='workflow_sessions')
-    op.drop_column('workflow_sessions', 'user_id')
-    op.drop_index(op.f('ix_resume_sessions_user_id'), table_name='resume_sessions')
-    op.drop_column('resume_sessions', 'user_id')
-    op.drop_index(op.f('ix_applications_user_id'), table_name='applications')
-    op.drop_column('applications', 'user_id')
     op.drop_table('subscription_payments')
+    op.drop_table('interview_sessions')
+    op.drop_index(op.f('ix_applications_user_id'), table_name='applications')
+    op.drop_table('applications')
+    op.drop_index(op.f('ix_workflow_sessions_user_id'), table_name='workflow_sessions')
+    op.drop_table('workflow_sessions')
     op.drop_table('wallet_transactions')
     op.drop_table('user_wallets')
     op.drop_table('usage_records')
     op.drop_table('subscriptions')
     op.drop_table('invoices')
     op.drop_table('users')
+    op.drop_index(op.f('ix_resume_sessions_user_id'), table_name='resume_sessions')
+    op.drop_table('resume_sessions')
     op.drop_table('billing_plans')
     # ### end Alembic commands ###

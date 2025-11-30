@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from config.settings import settings
-from workflows.database import (
+from database import (
     User, UserWallet, Subscription, BillingPlan, 
     SubscriptionPayment, WalletTransaction
 )

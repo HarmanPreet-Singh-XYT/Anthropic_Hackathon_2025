@@ -29,7 +29,7 @@ from agents.interview_manager import InterviewManager
 from workflows import ScholarshipWorkflow
 
 # Database imports
-from workflows.database import DatabaseManager
+from database import DatabaseManager
 from workflows.db_operations import (
     WorkflowSessionOperations,
     ResumeSessionOperations,
@@ -155,6 +155,39 @@ class DashboardResponse(BaseModel):
     recent_activity: List[ActivityItem]
 
 
+# --- Billing Models ---
+
+class PaymentHistoryItem(BaseModel):
+    id: str
+    amount_cents: int
+    currency: str
+    status: str
+    date: datetime
+    description: str
+
+class TransactionHistoryItem(BaseModel):
+    id: str
+    amount: int
+    type: str  # 'credit' or 'debit'
+    balance_after: int
+    description: str
+    date: datetime
+
+class UsageHistoryItem(BaseModel):
+    id: str
+    feature: str
+    amount: int
+    cost_cents: Optional[int]
+    date: datetime
+
+class BillingDetailsResponse(BaseModel):
+    subscription: Optional[SubscriptionInfo]
+    wallet: Optional[WalletInfo]
+    payment_history: List[PaymentHistoryItem]
+    transaction_history: List[TransactionHistoryItem]
+    usage_history: List[UsageHistoryItem]
+
+
 # ... (FastAPI Application setup remains same) ...
 
 
@@ -203,6 +236,91 @@ def get_db():
         db.close()
 
 
+# ==================== Billing Plan Management ====================
+
+def _seed_billing_plans_if_needed():
+    """Seed billing plans if they don't exist"""
+    from database import BillingPlan
+    
+    db = next(db_manager.get_session())
+    try:
+        # Check if plans already exist
+        existing = db.query(BillingPlan).count()
+        if existing > 0:
+            print(f"  ✓ {existing} billing plans already exist")
+            return
+        
+        # Define predefined plans
+        plans = [
+            BillingPlan(
+                slug="free",
+                name="Free",
+                price_cents=0,
+                interval="month",
+                tokens_per_period=100,
+                features={"max_applications": 5, "support": "community"}
+            ),
+            BillingPlan(
+                slug="starter",
+                name="Starter",
+                price_cents=999,  # $9.99
+                interval="month",
+                tokens_per_period=500,
+                features={"max_applications": 25, "support": "email", "priority_processing": False}
+            ),
+            BillingPlan(
+                slug="pro",
+                name="Pro",
+                price_cents=2900,  # $29.00
+                interval="month",
+                tokens_per_period=2000,
+                features={"max_applications": -1, "support": "priority", "priority_processing": True, "advanced_analytics": True}
+            ),
+            BillingPlan(
+                slug="pro-annual",
+                name="Pro Annual",
+                price_cents=29000,  # $290.00 (save ~17%)
+                interval="year",
+                tokens_per_period=24000,
+                features={"max_applications": -1, "support": "priority", "priority_processing": True, "advanced_analytics": True, "annual_discount": True}
+            )
+        ]
+        
+        for plan in plans:
+            db.add(plan)
+        
+        db.commit()
+        print(f"  ✓ Created {len(plans)} billing plans")
+        
+    except Exception as e:
+        print(f"  ✗ Error seeding billing plans: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _validate_plan_slug(db: Session, plan_slug: str) -> bool:
+    """
+    Validate that a plan slug exists in the database
+    
+    Args:
+        db: Database session
+        plan_slug: The plan slug to validate
+        
+    Returns:
+        True if valid, raises HTTPException if not
+    """
+    from database import BillingPlan
+    
+    plan = db.query(BillingPlan).filter(BillingPlan.slug == plan_slug).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid plan slug: {plan_slug}. Plan does not exist."
+        )
+    return True
+
+
 # ==================== Startup/Shutdown ====================
 
 @app.on_event("startup")
@@ -216,6 +334,11 @@ async def startup_event():
         db_manager = DatabaseManager(settings.database_url)
         db_manager.create_tables()
         print("✓ PostgreSQL database initialized")
+        
+        # Seed billing plans if they don't exist
+        print("Checking billing plans...")
+        _seed_billing_plans_if_needed()
+        print("✓ Billing plans ready")
         
         # Initialize ChromaDB vector store
         vector_store = VectorStore(
@@ -1281,7 +1404,7 @@ async def global_exception_handler(request, exc):
 async def get_billing_plans(db: Session = Depends(get_db)):
     """Get available billing plans"""
     try:
-        from workflows.database import BillingPlan
+        from database import BillingPlan
         
         plans = db.query(BillingPlan).all()
         
@@ -1322,6 +1445,9 @@ async def create_checkout_session(
         )
     
     try:
+        # Validate plan slug exists in database (prevent scam attempts)
+        _validate_plan_slug(db, plan_slug)
+        
         from services.stripe_service import StripeService
         
         session_data = StripeService.create_checkout_session(
@@ -1431,7 +1557,7 @@ async def cancel_subscription(
         )
     
     try:
-        from workflows.database import Subscription
+        from database import Subscription
         import stripe
         
         # Get active subscription
@@ -1452,21 +1578,129 @@ async def cancel_subscription(
             cancel_at_period_end=True
         )
         
-        # Update local record
         subscription.cancel_at_period_end = True
         db.commit()
         
-        return {
-            "success": True,
-            "message": "Subscription will be canceled at period end",
-            "period_end": subscription.current_period_end.isoformat()
-        }
-    except HTTPException:
-        raise
+        return {"status": "canceled", "message": "Subscription will be canceled at the end of the period"}
+        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error canceling subscription: {str(e)}"
+        )
+
+
+@app.get("/api/billing/details", response_model=BillingDetailsResponse)
+async def get_billing_details(
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get comprehensive billing and subscription details"""
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID required"
+        )
+        
+    try:
+        from database import Subscription, SubscriptionPayment, BillingPlan
+        
+        # 1. Get User & Wallet
+        user = UserOperations.create_if_not_exists(db, x_user_id)
+        
+        wallet_info = None
+        if user.wallet:
+            wallet_info = WalletInfo(
+                balance_tokens=user.wallet.balance_tokens,
+                currency=user.wallet.currency,
+                last_updated=user.wallet.updated_at
+            )
+            
+        # 2. Get Subscription Info
+        sub_info = None
+        if user.subscriptions:
+            active_sub = next((s for s in user.subscriptions if s.status == "active"), None)
+            if active_sub and active_sub.plan:
+                sub_info = SubscriptionInfo(
+                    status=active_sub.status,
+                    plan=PlanInfo(
+                        name=active_sub.plan.name,
+                        interval=active_sub.plan.interval,
+                        price_cents=active_sub.plan.price_cents,
+                        tokens_per_period=active_sub.plan.tokens_per_period,
+                        features=active_sub.plan.features
+                    ),
+                    current_period_start=active_sub.current_period_start,
+                    current_period_end=active_sub.current_period_end
+                )
+                
+        # 3. Get Payment History
+        payments = []
+        if user.subscriptions:
+            for sub in user.subscriptions:
+                sub_payments = db.query(SubscriptionPayment).filter(
+                    SubscriptionPayment.subscription_id == sub.id
+                ).order_by(SubscriptionPayment.created_at.desc()).limit(10).all()
+                
+                for p in sub_payments:
+                    payments.append(PaymentHistoryItem(
+                        id=p.id,
+                        amount_cents=p.amount_cents,
+                        currency=p.currency,
+                        status=p.status,
+                        date=p.created_at,
+                        description=f"Subscription payment"
+                    ))
+        
+        # Sort payments by date desc
+        payments.sort(key=lambda x: x.date, reverse=True)
+        payments = payments[:10]
+        
+        # 4. Get Transaction History
+        transactions = WalletTransactionOperations.get_recent(db, x_user_id, limit=20)
+        tx_history = []
+        for tx in transactions:
+            tx_type = 'credit' if tx.kind in ['grant', 'purchase', 'bonus'] else 'debit'
+            desc = f"{tx.kind.capitalize()}"
+            if tx.kind == 'deduction':
+                desc = f"Used for {tx.reference_id or 'service'}"
+            elif tx.kind == 'grant':
+                desc = "Monthly allowance"
+                
+            tx_history.append(TransactionHistoryItem(
+                id=tx.id,
+                amount=tx.amount,
+                type=tx_type,
+                balance_after=tx.balance_after,
+                description=desc,
+                date=tx.created_at
+            ))
+            
+        # 5. Get Usage History
+        usage_records = UsageRecordOperations.get_recent(db, x_user_id, limit=20)
+        usage_history = []
+        for rec in usage_records:
+            usage_history.append(UsageHistoryItem(
+                id=rec.id,
+                feature=rec.feature_name,
+                amount=rec.tokens_used,
+                cost_cents=rec.cost_cents,
+                date=rec.created_at
+            ))
+            
+        return BillingDetailsResponse(
+            subscription=sub_info,
+            wallet=wallet_info,
+            payment_history=payments,
+            transaction_history=tx_history,
+            usage_history=usage_history
+        )
+        
+    except Exception as e:
+        print(f"Error fetching billing details: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching billing details: {str(e)}"
         )
 
 

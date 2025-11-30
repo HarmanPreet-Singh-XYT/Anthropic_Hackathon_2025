@@ -3,8 +3,15 @@ Seed billing plans into the database
 Run this script to populate initial billing plans
 """
 
+import sys
+import os
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from sqlalchemy.orm import Session
-from workflows.database import DatabaseManager, BillingPlan
+from database import DatabaseManager, BillingPlan
 from config.settings import settings
 
 

@@ -4,9 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, FileDown, Loader2, CheckCircle, Copy, ArrowRight } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import TiptapEditor from '@/components/Editor';
+import { exportMarkdownToPDF } from '@/app/actions/export';
 
 // --- Types ---
 interface ApplicationData {
@@ -32,7 +31,7 @@ export default function ApplicationPage() {
     const [resumeContent, setResumeContent] = useState('');
     const router = useRouter();
     const searchParams = useSearchParams();
-    const session_id = searchParams.get('session');
+    const session_id = searchParams!.get('session');
     const contentRef = useRef<HTMLDivElement>(null);
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -73,34 +72,56 @@ export default function ApplicationPage() {
         fetchData();
     }, [session_id, router]);
 
+
     const handleExportPDF = async () => {
-        if (!resumeContent) return;
+        if (!resumeContent) {
+            console.warn('No resume content to export');
+            return;
+        }
 
         setIsExporting(true);
+        
         try {
-            const res = await fetch("/api/export/markdown", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ markdown: resumeContent }),
-            });
+            // Call the server action
+            const result = await exportMarkdownToPDF(resumeContent);
 
-            if (!res.ok) throw new Error("Failed to export PDF");
+            if (!result.success || !result.data) {
+                throw new Error(result.error || 'Failed to generate PDF');
+            }
 
-            const blob = await res.blob();
+            // Convert base64 to blob
+            const binaryString = atob(result.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+
+            // Create download link
             const url = URL.createObjectURL(blob);
-
-            const a = document.createElement("a");
+            const a = document.createElement('a');
             a.href = url;
-            a.download = "resume.pdf";
+            a.download = `resume-${new Date().toISOString().split('T')[0]}.pdf`;
+            
+            // Trigger download
             document.body.appendChild(a);
             a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
+            
+            // Cleanup
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 100);
 
+            // Show success message
             setExportSuccess(true);
             setTimeout(() => setExportSuccess(false), 3000);
+
         } catch (error) {
-            console.error("Error exporting PDF:", error);
+            console.error('Error exporting PDF:', error);
+            
+            // Optional: Add error state to show user
+            // setExportError(error instanceof Error ? error.message : 'Failed to export PDF');
+            // setTimeout(() => setExportError(null), 3000);
+            
         } finally {
             setIsExporting(false);
         }

@@ -1,5 +1,7 @@
 "use client"
 import React, { useState, useEffect, ChangeEvent } from 'react';
+import { useAuthClient } from '@/hooks/useAuthClient';
+import { updateUserProfile } from '@/app/actions/user-actions';
 import {
   User, Shield, Camera, Save, LogOut,
   GraduationCap, ChevronRight, Lock,
@@ -49,37 +51,33 @@ const ProfilePage: React.FC = () => {
     phone: ''
   });
 
-  // Fetch user data from Logto
+  const { user, isLoading: isAuthLoading } = useAuthClient();
+
+  // Sync user data from auth hook
   useEffect(() => {
-    const fetchUserData = async (): Promise<void> => {
-      try {
-        setLoading(true);
-        const response = await fetch('/api/logto/user');
+    if (user) {
+      setUserData({
+        id: user.sub,
+        name: user.name,
+        email: user.email,
+        primaryEmail: user.email,
+        phone: user.phone,
+        avatar: user.avatar
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch user data');
-        }
-
-        const data: UserData = await response.json();
-        setUserData(data);
-
-        // Initialize form data with user data
+      // Initialize form data with user data if not already editing
+      if (!isEditing) {
         setFormData({
-          name: data.name || '',
-          phone: data.phone || ''
+          name: user.name || '',
+          phone: user.phone || ''
         });
-
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching user data:', err);
-        setError(err instanceof Error ? err.message : 'An error occurred');
-      } finally {
-        setLoading(false);
       }
-    };
 
-    fetchUserData();
-  }, []);
+      setLoading(false);
+    } else if (!isAuthLoading) {
+      setLoading(false);
+    }
+  }, [user, isAuthLoading, isEditing]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
@@ -90,33 +88,58 @@ const ProfilePage: React.FC = () => {
   };
 
   const handleSave = async (): Promise<void> => {
+    if (!userData?.id) return;
+
     try {
-      const response = await fetch('/api/user/update', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+      const result = await updateUserProfile(userData.id, {
+        name: formData.name,
+        phone: formData.phone
       });
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || 'Failed to update profile');
+      if (!result.success) {
+        throw new Error(result.message);
       }
 
       // Update local user data state
-      if (userData) {
-        setUserData({
-          ...userData,
-          name: formData.name,
-          phone: formData.phone
-        });
-      }
+      setUserData({
+        ...userData,
+        name: formData.name,
+        phone: formData.phone
+      });
 
       setIsEditing(false);
       alert('Profile updated successfully!');
     } catch (err) {
       console.error('Error saving data:', err);
       alert(err instanceof Error ? err.message : 'Failed to update profile');
+    }
+  };
+
+  const handlePasswordUpdate = async (): Promise<void> => {
+    const newPasswordInput = document.querySelector('input[placeholder="New Secure Password"]') as HTMLInputElement;
+    const newPassword = newPasswordInput?.value;
+
+    if (!newPassword) {
+      alert('Please enter a new password');
+      return;
+    }
+
+    if (!userData?.id) return;
+
+    try {
+      const result = await updateUserProfile(userData.id, {
+        password: newPassword
+      });
+
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+
+      alert('Password updated successfully!');
+      newPasswordInput.value = ''; // Clear input
+    } catch (err) {
+      console.error('Error updating password:', err);
+      alert(err instanceof Error ? err.message : 'Failed to update password');
     }
   };
 
@@ -424,7 +447,10 @@ const ProfilePage: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex justify-end mt-4">
-                          <button className="px-6 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl font-bold text-sm hover:opacity-90">
+                          <button
+                            onClick={handlePasswordUpdate}
+                            className="px-6 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl font-bold text-sm hover:opacity-90"
+                          >
                             Update Credentials
                           </button>
                         </div>

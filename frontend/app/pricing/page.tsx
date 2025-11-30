@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, X, Sparkles, Zap, Brain, Target, Shield,
-  ArrowRight, Moon, Sun, ChevronDown, Loader2
+  ArrowRight, Moon, Sun, ChevronDown, Loader2, Settings
 } from 'lucide-react';
-import { getBillingPlans, createCheckoutSession, BillingPlan } from '@/lib/api';
+import { getBillingPlans, createCheckoutSession, createPortalSession, getBillingDetails, BillingPlan } from '@/lib/api';
+import { useAuthClient } from '@/hooks/useAuthClient';
 
 const PricingPage = () => {
   const [isAnnual, setIsAnnual] = useState(true);
@@ -13,22 +14,39 @@ const PricingPage = () => {
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  const [userInfo, setUserInfo] = useState<any>(null);
+  const [currentPlanSlug, setCurrentPlanSlug] = useState<string | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+
+  const { user, isLoading: isAuthLoading } = useAuthClient();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Fetch user info
-        const userRes = await fetch('/api/logto/user');
-        if (userRes.ok) {
-          const userData = await userRes.json();
-          setUserInfo(userData);
-        }
 
         // Fetch billing plans
         const plansData = await getBillingPlans();
         setPlans(plansData.plans);
+
+        // Fetch user's current subscription if authenticated
+        if (user?.sub) {
+          try {
+            const billingDetails = await getBillingDetails(user.sub);
+            if (billingDetails.subscription) {
+              setSubscriptionStatus(billingDetails.subscription.status);
+              // Match the current plan by comparing plan details
+              const currentPlan = plansData.plans.find(
+                p => p.name === billingDetails.subscription?.plan.name
+              );
+              if (currentPlan) {
+                setCurrentPlanSlug(currentPlan.slug);
+              }
+            }
+          } catch (error) {
+            console.error('Failed to fetch billing details:', error);
+            // Continue even if billing details fail
+          }
+        }
       } catch (error) {
         console.error('Failed to fetch pricing data:', error);
       } finally {
@@ -36,11 +54,13 @@ const PricingPage = () => {
       }
     };
 
-    fetchData();
-  }, []);
+    if (!isAuthLoading) {
+      fetchData();
+    }
+  }, [user, isAuthLoading]);
 
   const handleSubscribe = async (planSlug: string) => {
-    if (!userInfo?.id) {
+    if (!user?.sub) {
       // Redirect to login
       window.location.href = '/api/logto/sign-in';
       return;
@@ -50,7 +70,7 @@ const PricingPage = () => {
       setCheckoutLoading(planSlug);
       const baseUrl = window.location.origin;
       const { url } = await createCheckoutSession(
-        userInfo.id,
+        user.sub,
         planSlug,
         `${baseUrl}/dashboard?checkout=success`,
         `${baseUrl}/pricing?checkout=canceled`
@@ -61,6 +81,66 @@ const PricingPage = () => {
       alert('Failed to start checkout. Please try again.');
       setCheckoutLoading(null);
     }
+  };
+
+  const handleManagePlan = async () => {
+    if (!user?.sub) {
+      window.location.href = '/api/logto/sign-in';
+      return;
+    }
+
+    try {
+      setCheckoutLoading('manage');
+      const baseUrl = window.location.origin;
+      const { url } = await createPortalSession(
+        user.sub,
+        `${baseUrl}/pricing`
+      );
+      window.location.href = url;
+    } catch (error) {
+      console.error('Failed to create portal session:', error);
+      alert('Failed to open billing portal. Please try again.');
+      setCheckoutLoading(null);
+    }
+  };
+
+  const getButtonForPlan = (planSlug: string) => {
+    const isCurrentPlan = currentPlanSlug === planSlug;
+    const isFreePlan = planSlug === 'free' || planSlug === 'basic';
+
+    if (isCurrentPlan && subscriptionStatus === 'active') {
+      return {
+        text: 'Current Plan',
+        disabled: true,
+        onClick: () => { },
+        className: 'w-full py-4 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold cursor-not-allowed'
+      };
+    }
+
+    if (isCurrentPlan) {
+      return {
+        text: 'Manage Plan',
+        disabled: checkoutLoading === 'manage',
+        onClick: handleManagePlan,
+        className: 'w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold shadow-lg hover:shadow-purple-500/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2'
+      };
+    }
+
+    if (isFreePlan) {
+      return {
+        text: 'Start Free',
+        disabled: false,
+        onClick: () => window.location.href = '/dashboard',
+        className: 'w-full py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors'
+      };
+    }
+
+    return {
+      text: currentPlanSlug ? 'Change Plan' : 'Get Started Now',
+      disabled: checkoutLoading === planSlug,
+      onClick: () => handleSubscribe(planSlug),
+      className: 'w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold shadow-lg shadow-purple-900/50 hover:shadow-purple-500/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2'
+    };
   };
 
   const toggleTheme = () => setIsDark(!isDark);
@@ -178,7 +258,14 @@ const PricingPage = () => {
           <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-3 gap-8 relative z-10">
 
             {/* Card 1: Free Plan */}
-            <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-3xl p-8 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">
+            <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-3xl p-8 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group relative">
+              {currentPlanSlug === 'free' && subscriptionStatus === 'active' && (
+                <div className="absolute top-6 right-6">
+                  <span className="bg-green-500/20 text-green-600 dark:text-green-400 text-xs font-bold px-3 py-1 rounded-full border border-green-500/30 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> ACTIVE
+                  </span>
+                </div>
+              )}
               <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Target className="w-6 h-6 text-slate-600 dark:text-slate-400" />
               </div>
@@ -189,10 +276,11 @@ const PricingPage = () => {
                 <span className="text-slate-400 font-mono">/forever</span>
               </div>
               <button
-                onClick={() => window.location.href = '/dashboard'}
-                className="w-full py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-8"
+                onClick={getButtonForPlan('free').onClick}
+                disabled={getButtonForPlan('free').disabled}
+                className={getButtonForPlan('free').className}
               >
-                Start Free
+                {getButtonForPlan('free').text}
               </button>
               <ul className="space-y-4 text-sm">
                 <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-slate-400 flex-shrink-0" /> Scout Agent Access</li>
@@ -204,7 +292,12 @@ const PricingPage = () => {
             {/* Card 2: Pro Plan (Highlighted) */}
             <div className="bg-slate-900 dark:bg-slate-950 border border-purple-500/30 rounded-3xl p-8 relative overflow-hidden transform md:-translate-y-4 shadow-2xl shadow-purple-500/20">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
-              <div className="absolute top-6 right-6">
+              <div className="absolute top-6 right-6 flex gap-2">
+                {currentPlanSlug === proPlan?.slug && subscriptionStatus === 'active' && (
+                  <span className="bg-green-500/20 text-green-300 text-xs font-bold px-3 py-1 rounded-full border border-green-500/30 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> ACTIVE
+                  </span>
+                )}
                 <span className="bg-purple-500/20 text-purple-300 text-xs font-bold px-3 py-1 rounded-full border border-purple-500/30 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" /> POPULAR
                 </span>
@@ -223,17 +316,22 @@ const PricingPage = () => {
               </div>
 
               <button
-                onClick={() => proPlan && handleSubscribe(proPlan.slug)}
-                disabled={checkoutLoading === 'pro'}
-                className="w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold shadow-lg shadow-purple-900/50 hover:shadow-purple-500/40 hover:scale-[1.02] transition-all mb-8 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                onClick={() => proPlan && getButtonForPlan(proPlan.slug).onClick()}
+                disabled={!proPlan || getButtonForPlan(proPlan?.slug || 'pro').disabled}
+                className={getButtonForPlan(proPlan?.slug || 'pro').className}
               >
-                {checkoutLoading === 'pro' ? (
+                {checkoutLoading === (proPlan?.slug || 'pro') || checkoutLoading === 'manage' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Loading...
                   </>
                 ) : (
-                  'Get Started Now'
+                  <>
+                    {currentPlanSlug === proPlan?.slug && subscriptionStatus === 'active' && (
+                      <Check className="w-4 h-4" />
+                    )}
+                    {getButtonForPlan(proPlan?.slug || 'pro').text}
+                  </>
                 )}
               </button>
 

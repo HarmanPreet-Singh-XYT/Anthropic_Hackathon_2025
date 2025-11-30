@@ -6,7 +6,7 @@ from datetime import datetime
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from workflows.database import DatabaseManager, User, UserWallet, WalletTransaction, BillingPlan, Subscription, SubscriptionPayment
+from database import DatabaseManager, User, UserWallet, WalletTransaction, BillingPlan, Subscription, SubscriptionPayment
 from config.settings import settings
 
 def verify_monetization():

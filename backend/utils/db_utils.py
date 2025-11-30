@@ -4,7 +4,7 @@ Run with: python db_utils.py [command]
 """
 
 import sys
-from workflows.database import DatabaseManager
+from database import DatabaseManager
 from config.settings import settings
 
 
@@ -64,7 +64,7 @@ def reset_database():
 def show_stats():
     """Show database statistics"""
     try:
-        from backend.workflows.database import (
+        from database import (
             WorkflowSessionOperations,
             ResumeSessionOperations,
             InterviewSessionOperations,
@@ -79,7 +79,7 @@ def show_stats():
         db = next(db_manager.get_session())
         
         # Count records
-        from backend.workflows.database import WorkflowSession, ResumeSession, InterviewSession, Application
+        from database import WorkflowSession, ResumeSession, InterviewSession, Application
         
         workflow_count = db.query(func.count(WorkflowSession.id)).scalar()
         resume_count = db.query(func.count(ResumeSession.id)).scalar()
@@ -116,7 +116,7 @@ def cleanup_old_sessions():
     """Clean up old incomplete sessions (older than 24 hours)"""
     try:
         from datetime import datetime, timedelta
-        from backend.workflows.database import WorkflowSession
+        from database import WorkflowSession
         
         print("Cleaning up old sessions...")
         
@@ -152,7 +152,7 @@ def export_applications():
     try:
         import csv
         from datetime import datetime
-        from backend.workflows.database import Application
+        from database import Application
         
         print("Exporting applications...")
         
