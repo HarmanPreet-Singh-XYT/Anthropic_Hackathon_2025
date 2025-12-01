@@ -2,10 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, X, Sparkles, Zap, Brain, Target, Shield,
-  ArrowRight, Moon, Sun, ChevronDown, Loader2, Settings
+  ArrowRight, Moon, Sun, ChevronDown, Loader2, Settings, CheckCircle2
 } from 'lucide-react';
 import { getBillingPlans, createCheckoutSession, createPortalSession, getBillingDetails, BillingPlan } from '@/lib/api';
 import { useAuthClient } from '@/hooks/useAuthClient';
+import { triggerSignIn } from '@/app/auth-actions';
 
 const PricingPage = () => {
   const [isAnnual, setIsAnnual] = useState(true);
@@ -61,8 +62,8 @@ const PricingPage = () => {
 
   const handleSubscribe = async (planSlug: string) => {
     if (!user?.sub) {
-      // Redirect to login
-      window.location.href = '/api/logto/sign-in';
+      // Redirect to login using server action
+      triggerSignIn();
       return;
     }
 
@@ -85,7 +86,7 @@ const PricingPage = () => {
 
   const handleManagePlan = async () => {
     if (!user?.sub) {
-      window.location.href = '/api/logto/sign-in';
+      triggerSignIn();
       return;
     }
 
@@ -204,6 +205,34 @@ const PricingPage = () => {
             </button>
           </div>
         </nav>
+
+        {/* Active Subscription Banner */}
+        {currentPlanSlug && subscriptionStatus === 'active' && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700/50">
+            <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div>
+                  <p className="font-bold text-blue-900 dark:text-blue-100">
+                    You're currently on the {plans.find(p => p.slug === currentPlanSlug)?.name || 'active'} plan
+                  </p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    Manage your subscription, view billing history, and track usage
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => window.location.href = '/subscription'}
+                  className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" />
+                  Manage Subscription
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Background Grid */}
         <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.05]"

@@ -762,17 +762,54 @@ class UserOperations:
     
     @staticmethod
     def create_if_not_exists(db: Session, user_id: str, email: Optional[str] = None):
-        """Create user if not exists"""
-        from database import User, UserWallet
+        """Create user if not exists, automatically assigns free subscription"""
+        from database import User, UserWallet, BillingPlan, Subscription, WalletTransaction
         
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
+            # 1. Create user
             user = User(id=user_id, email=email)
             db.add(user)
             
-            # Create default wallet
-            wallet = UserWallet(user_id=user_id, balance_tokens=100) # Default 100 tokens
+            # 2. Get free plan
+            free_plan = db.query(BillingPlan).filter(BillingPlan.slug == "free").first()
+            if not free_plan:
+                raise ValueError(
+                    "Free plan not found in database. Please run: python scripts/seed_billing_plans.py"
+                )
+            
+            # 3. Create wallet with plan tokens
+            wallet = UserWallet(
+                user_id=user_id, 
+                balance_tokens=free_plan.tokens_per_period
+            )
             db.add(wallet)
+            
+            # 4. Create free subscription
+            subscription = Subscription(
+                user_id=user_id,
+                plan_id=free_plan.id,
+                status="active",
+                current_period_start=datetime.utcnow(),
+                current_period_end=None,  # Free plan has no end date
+                external_subscription_id=None  # No Stripe subscription for free plan
+            )
+            db.add(subscription)
+            
+            # 5. Record initial token grant transaction
+            transaction = WalletTransaction(
+                user_id=user_id,
+                amount=free_plan.tokens_per_period,
+                balance_after=free_plan.tokens_per_period,
+                kind='grant',
+                reference_id=subscription.id,
+                metadata_json={
+                    'source': 'account_creation',
+                    'plan': free_plan.name,
+                    'reason': 'Welcome bonus'
+                }
+            )
+            db.add(transaction)
             
             db.commit()
             db.refresh(user)
@@ -823,6 +860,17 @@ class UsageRecordOperations:
             "tokens_used_today": int(tokens_today),
             "tokens_used_month": int(tokens_month)
         }
+    
+    @staticmethod
+    def get_recent(db: Session, user_id: str, limit: int = 20) -> List[Any]:
+        """Get recent usage records for a user"""
+        from database import UsageRecord
+        
+        return db.query(UsageRecord)\
+            .filter(UsageRecord.user_id == user_id)\
+            .order_by(desc(UsageRecord.created_at))\
+            .limit(limit)\
+            .all()
 
 
 class WalletTransactionOperations:

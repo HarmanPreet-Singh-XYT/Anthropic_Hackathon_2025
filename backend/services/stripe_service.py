@@ -188,23 +188,60 @@ class StripeService:
     @staticmethod
     def _handle_checkout_completed(db: Session, session: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful checkout"""
-        user_id = session['metadata']['user_id']
-        plan_id = session['metadata']['plan_id']
+        # Validate metadata
+        if 'metadata' not in session or not session['metadata']:
+            print(f"❌ [Webhook] Error: No metadata in session {session.get('id')}")
+            raise ValueError("No metadata in session")
+            
+        user_id = session['metadata'].get('user_id')
+        plan_id = session['metadata'].get('plan_id')
+        
+        if not user_id or not plan_id:
+            print(f"❌ [Webhook] Error: Missing user_id or plan_id in metadata. Got: {session['metadata']}")
+            raise ValueError("Missing user_id or plan_id in metadata")
+        
+        print(f"✓ [Webhook] Processing checkout for user {user_id}, plan {plan_id}")
         
         # Get subscription from Stripe
-        subscription_id = session['subscription']
+        subscription_id = session.get('subscription')
+        if not subscription_id:
+             print(f"❌ [Webhook] Error: No subscription ID in session")
+             raise ValueError("No subscription ID in session")
+             
         stripe_sub = stripe.Subscription.retrieve(subscription_id)
+        print(f"🔍 [Webhook] Retrieved subscription: {type(stripe_sub)}")
+        print(f"🔍 [Webhook] Subscription keys: {stripe_sub.keys() if hasattr(stripe_sub, 'keys') else 'No keys'}")
+        # print(f"🔍 [Webhook] Subscription data: {stripe_sub}")
         
-        # Create subscription record
-        subscription = Subscription(
-            user_id=user_id,
-            plan_id=plan_id,
-            status='active',
-            current_period_start=datetime.fromtimestamp(stripe_sub.current_period_start),
-            current_period_end=datetime.fromtimestamp(stripe_sub.current_period_end),
-            external_subscription_id=subscription_id
-        )
-        db.add(subscription)
+        # Check if user has existing subscription (e.g., free plan)
+        existing_sub = db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.status == 'active'
+        ).first()
+        
+        if existing_sub:
+            # Update existing subscription to paid plan
+            print(f"✓ [Webhook] Updating existing subscription {existing_sub.id}")
+            print(f"✓ [Webhook] USING DICT ACCESS for subscription data")
+            existing_sub.plan_id = plan_id
+            existing_sub.status = 'active'
+            existing_sub.current_period_start = datetime.fromtimestamp(stripe_sub.get('current_period_start', datetime.utcnow().timestamp()))
+            existing_sub.current_period_end = datetime.fromtimestamp(stripe_sub.get('current_period_end', datetime.utcnow().timestamp()))
+            existing_sub.external_subscription_id = subscription_id
+            subscription = existing_sub
+        else:
+            # Create new subscription record
+            print(f"✓ [Webhook] Creating new subscription")
+            print(f"✓ [Webhook] USING DICT ACCESS for subscription data")
+            subscription = Subscription(
+                user_id=user_id,
+                plan_id=plan_id,
+                status='active',
+                current_period_start=datetime.fromtimestamp(stripe_sub.get('current_period_start', datetime.utcnow().timestamp())),
+                current_period_end=datetime.fromtimestamp(stripe_sub.get('current_period_end', datetime.utcnow().timestamp())),
+                external_subscription_id=subscription_id
+            )
+            db.add(subscription)
         
         # Grant tokens
         plan = db.query(BillingPlan).filter(BillingPlan.id == plan_id).first()
@@ -214,6 +251,8 @@ class StripeService:
                 old_balance = wallet.balance_tokens
                 wallet.balance_tokens += plan.tokens_per_period
                 wallet.updated_at = datetime.utcnow()
+                
+                print(f"✓ [Webhook] Granted {plan.tokens_per_period} tokens. Balance: {old_balance} → {wallet.balance_tokens}")
                 
                 # Record transaction
                 transaction = WalletTransaction(
@@ -228,6 +267,7 @@ class StripeService:
         
         db.commit()
         
+        print(f"✓ [Webhook] Checkout completed successfully")
         return {'status': 'success', 'subscription_id': subscription_id}
     
     @staticmethod

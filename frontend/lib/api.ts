@@ -214,6 +214,7 @@ export interface SubscriptionInfo {
 
 export interface DashboardApplication {
     id: string;
+    session_id: string;
     scholarship_url: string;
     status: string;
     match_score: number | null;

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react';
-import { getAuthUser, triggerSignIn } from '@/app/auth-actions'; // adjust path as needed
+import { getAuthUser } from '@/app/auth-actions';
 
 interface User {
     sub: string;
@@ -24,19 +24,13 @@ export function useAuthClient() {
                 if (userData) {
                     setUser(userData);
                 } else {
-                    // User not authenticated, trigger sign-in
-                    console.log('[useAuthClient] User not authenticated, triggering sign-in');
-                    await triggerSignIn();
+                    // User not authenticated, but don't force sign-in
+                    // Let the consuming component decide what to do
+                    console.log('[useAuthClient] User not authenticated');
                     setUser(null);
                 }
             } catch (error) {
                 console.error('[useAuthClient] Error fetching user:', error);
-                // On error, also try to sign in
-                try {
-                    await triggerSignIn();
-                } catch (signInError) {
-                    console.error('[useAuthClient] Error signing in:', signInError);
-                }
                 setUser(null);
             } finally {
                 setIsLoading(false);

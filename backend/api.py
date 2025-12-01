@@ -90,6 +90,7 @@ class SubscriptionInfo(BaseModel):
 
 class DashboardApplication(BaseModel):
     id: str
+    session_id: str
     scholarship_url: str
     status: str
     match_score: Optional[float]
@@ -779,6 +780,7 @@ async def get_dashboard_data(
                 if app:
                     dash_apps.append(DashboardApplication(
                         id=app.id,
+                        session_id=app.workflow_session_id,
                         scholarship_url=app.scholarship_url,
                         status=app.status,
                         match_score=app.match_score,
@@ -961,6 +963,28 @@ async def start_workflow(
     if workflow_orchestrator is None:
         raise HTTPException(status_code=503, detail="Workflow system not initialized")
     
+    # Check user has sufficient tokens
+    WORKFLOW_TOKEN_COST = 50  # Cost to run a workflow
+    
+    if x_user_id:
+        from database import UserWallet, WalletTransaction, UsageRecord
+        
+        user = UserOperations.create_if_not_exists(db, x_user_id)
+        wallet = db.query(UserWallet).filter(UserWallet.user_id == x_user_id).first()
+        
+        if not wallet or wallet.balance_tokens < WORKFLOW_TOKEN_COST:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Insufficient tokens. Required: {WORKFLOW_TOKEN_COST}, Available: {wallet.balance_tokens if wallet else 0}"
+            )
+        
+        # Deduct tokens
+        old_balance = wallet.balance_tokens
+        wallet.balance_tokens -= WORKFLOW_TOKEN_COST
+        wallet.updated_at = datetime.utcnow()
+        
+        print(f"💰 [Workflow] Deducted {WORKFLOW_TOKEN_COST} tokens from user {x_user_id}. Balance: {old_balance} → {wallet.balance_tokens}")
+    
     # Handle resume source
     target_resume_path = resume_path
     
@@ -988,6 +1012,34 @@ async def start_workflow(
         resume_session_id=resume_session_id,
         user_id=x_user_id
     )
+    
+    # Record token deduction transaction and usage
+    if x_user_id:
+        from database import WalletTransaction, UsageRecord
+        
+        # Record wallet transaction
+        transaction = WalletTransaction(
+            user_id=x_user_id,
+            amount=-WORKFLOW_TOKEN_COST,
+            balance_after=wallet.balance_tokens,
+            kind='deduction',
+            reference_id=workflow_session_id,
+            metadata_json={'resource_type': 'workflow', 'scholarship_url': scholarship_url}
+        )
+        db.add(transaction)
+        
+        # Record usage
+        usage = UsageRecord(
+            user_id=x_user_id,
+            resource_type='workflow',
+            resource_id=workflow_session_id,
+            tokens_used=WORKFLOW_TOKEN_COST,
+            metadata_json={'scholarship_url': scholarship_url}
+        )
+        db.add(usage)
+        
+        db.commit()
+    
     
     async def run_workflow_background():
         db_session = next(db_manager.get_session())
@@ -1516,14 +1568,18 @@ async def stripe_webhook(
     sig_header = request.headers.get('stripe-signature')
     
     if not sig_header:
+        print(f"❌ [Webhook] Missing stripe-signature header")
+        print(f"   Available headers: {list(request.headers.keys())}")
+        print(f"   Payload size: {len(payload)} bytes")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing stripe-signature header"
+            detail="Missing stripe-signature header. Use Stripe CLI for local testing: stripe listen --forward-to localhost:8000/api/stripe/webhook"
         )
     
     try:
         from services.stripe_service import StripeService
         
+        print(f"✓ [Webhook] Processing event with signature")
         result = StripeService.handle_webhook_event(
             db=db,
             payload=payload,
@@ -1532,12 +1588,15 @@ async def stripe_webhook(
         
         return result
     except ValueError as e:
+        print(f"❌ [Webhook] ValueError: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        print(f"Webhook error: {e}")
+        print(f"❌ [Webhook] Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Webhook processing error: {str(e)}"
@@ -1618,6 +1677,7 @@ async def get_billing_details(
             
         # 2. Get Subscription Info
         sub_info = None
+        active_sub = None
         if user.subscriptions:
             active_sub = next((s for s in user.subscriptions if s.status == "active"), None)
             if active_sub and active_sub.plan:
@@ -1634,55 +1694,95 @@ async def get_billing_details(
                     current_period_end=active_sub.current_period_end
                 )
                 
-        # 3. Get Payment History
+        # 3. Get Payment History (from SubscriptionPayment)
         payments = []
         if user.subscriptions:
             for sub in user.subscriptions:
                 sub_payments = db.query(SubscriptionPayment).filter(
                     SubscriptionPayment.subscription_id == sub.id
-                ).order_by(SubscriptionPayment.created_at.desc()).limit(10).all()
+                ).order_by(SubscriptionPayment.created_at.desc()).limit(20).all()
                 
                 for p in sub_payments:
+                    # Get plan name for better description
+                    plan_name = sub.plan.name if sub.plan else "Subscription"
+                    status_emoji = "✓" if p.status == "succeeded" else "✗"
+                    
+                    description = f"{status_emoji} {plan_name} - {p.status.capitalize()}"
+                    if p.status == "succeeded":
+                        description = f"Payment for {plan_name} subscription"
+                    elif p.status == "failed":
+                        description = f"Failed payment for {plan_name}"
+                    
                     payments.append(PaymentHistoryItem(
                         id=p.id,
                         amount_cents=p.amount_cents,
                         currency=p.currency,
                         status=p.status,
                         date=p.created_at,
-                        description=f"Subscription payment"
+                        description=description
                     ))
         
-        # Sort payments by date desc
+        # Sort payments by date desc and limit
         payments.sort(key=lambda x: x.date, reverse=True)
-        payments = payments[:10]
+        payments = payments[:20]
         
-        # 4. Get Transaction History
-        transactions = WalletTransactionOperations.get_recent(db, x_user_id, limit=20)
+        # 4. Get Transaction History (from WalletTransaction)
+        transactions = WalletTransactionOperations.get_recent(db, x_user_id, limit=30)
         tx_history = []
         for tx in transactions:
             tx_type = 'credit' if tx.kind in ['grant', 'purchase', 'bonus'] else 'debit'
+            
+            # Enhanced descriptions based on transaction kind and metadata
             desc = f"{tx.kind.capitalize()}"
             if tx.kind == 'deduction':
-                desc = f"Used for {tx.reference_id or 'service'}"
+                # Try to get more context from metadata
+                if tx.metadata_json and 'resource_type' in tx.metadata_json:
+                    desc = f"Used for {tx.metadata_json['resource_type']}"
+                else:
+                    desc = f"Token usage - {tx.reference_id or 'service'}"
             elif tx.kind == 'grant':
-                desc = "Monthly allowance"
+                if tx.metadata_json and 'source' in tx.metadata_json:
+                    source = tx.metadata_json['source']
+                    if source == 'subscription_start':
+                        desc = f"Welcome bonus - {tx.metadata_json.get('plan', 'Subscription')}"
+                    elif source == 'subscription_renewal':
+                        desc = f"Monthly allowance - {tx.metadata_json.get('plan', 'Subscription')}"
+                    else:
+                        desc = "Token grant"
+                else:
+                    desc = "Token grant"
+            elif tx.kind == 'purchase':
+                desc = "Token purchase"
+            elif tx.kind == 'bonus':
+                desc = "Bonus tokens"
                 
             tx_history.append(TransactionHistoryItem(
                 id=tx.id,
-                amount=tx.amount,
+                amount=abs(tx.amount),  # Show absolute value
                 type=tx_type,
                 balance_after=tx.balance_after,
                 description=desc,
                 date=tx.created_at
             ))
             
-        # 5. Get Usage History
-        usage_records = UsageRecordOperations.get_recent(db, x_user_id, limit=20)
+        # 5. Get Usage History (from UsageRecord)
+        usage_records = UsageRecordOperations.get_recent(db, x_user_id, limit=30)
         usage_history = []
         for rec in usage_records:
+            # Map resource_type to user-friendly feature names
+            feature_display = rec.resource_type
+            if rec.resource_type == 'workflow':
+                feature_display = 'Scholarship Application'
+            elif rec.resource_type == 'interview':
+                feature_display = 'Interview Session'
+            elif rec.resource_type == 'resume_upload':
+                feature_display = 'Resume Processing'
+            elif rec.resource_type == 'essay_generation':
+                feature_display = 'Essay Generation'
+            
             usage_history.append(UsageHistoryItem(
                 id=rec.id,
-                feature=rec.feature_name,
+                feature=feature_display,
                 amount=rec.tokens_used,
                 cost_cents=rec.cost_cents,
                 date=rec.created_at
@@ -1698,6 +1798,8 @@ async def get_billing_details(
         
     except Exception as e:
         print(f"Error fetching billing details: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching billing details: {str(e)}"

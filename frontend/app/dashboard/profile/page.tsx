@@ -2,6 +2,7 @@
 import React, { useState, useEffect, ChangeEvent } from 'react';
 import { useAuthClient } from '@/hooks/useAuthClient';
 import { updateUserProfile } from '@/app/actions/user-actions';
+import { triggerSignIn, triggerSignOut } from '@/app/auth-actions';
 import {
   User, Shield, Camera, Save, LogOut,
   GraduationCap, ChevronRight, Lock,
@@ -145,7 +146,7 @@ const ProfilePage: React.FC = () => {
 
   const handleSignOut = async (): Promise<void> => {
     try {
-      window.location.href = '/api/logto/sign-out';
+      await triggerSignOut();
     } catch (err) {
       console.error('Sign out error:', err);
     }
@@ -189,7 +190,7 @@ const ProfilePage: React.FC = () => {
             <h2 className="font-bold text-xl mb-2">Authentication Error</h2>
             <p className="text-sm mb-4">{error}</p>
             <button
-              onClick={() => window.location.href = '/api/logto/sign-in'}
+              onClick={() => triggerSignIn()}
               className="px-6 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
             >
               Sign In
@@ -456,7 +457,7 @@ const ProfilePage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 dark:bg-slate-950/30 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-6">
+                      {/* <div className="bg-slate-50 dark:bg-slate-950/30 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-6">
                         <div className="flex items-start gap-4">
                           <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-xl">
                             <Shield className="w-6 h-6 text-green-600 dark:text-green-400" />
@@ -494,7 +495,7 @@ const ProfilePage: React.FC = () => {
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </div> */}
 
                     </div>
                   )}

@@ -1,6 +1,6 @@
 'use server'
 
-import { getLogtoContext, signIn } from '@logto/next/server-actions';
+import { getLogtoContext, signIn, signOut } from '@logto/next/server-actions';
 import { logtoConfig } from '@/app/logto';
 
 export async function getAuthUser() {
@@ -21,4 +21,9 @@ export async function getAuthUser() {
 
 export async function triggerSignIn() {
     await signIn(logtoConfig);
+}
+
+export async function triggerSignOut() {
+    'use server';
+    await signOut(logtoConfig);
 }

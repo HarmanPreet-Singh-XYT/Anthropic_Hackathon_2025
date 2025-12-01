@@ -1,7 +1,11 @@
 # Billing & Subscription System Documentation
 
 ## Overview
+## Overview
 This document describes the complete billing and subscription system, including security measures to prevent pricing manipulation.
+
+**Note:** New users are automatically assigned the "Free" subscription plan upon account creation, which includes an initial token grant.
+
 
 ## Security Measures
 
@@ -180,7 +184,7 @@ Cancel the user's active subscription at the end of the billing period.
 ---
 
 ### 5. Get Billing Details
-Fetch comprehensive billing information.
+Fetch comprehensive billing information including payment history, transaction history, and usage history.
 
 **Endpoint:** `GET /api/billing/details`
 
@@ -196,20 +200,163 @@ Fetch comprehensive billing information.
       "name": "Pro",
       "interval": "month",
       "price_cents": 2900,
-      "tokens_per_period": 2000
+      "tokens_per_period": 2000,
+      "features": {
+        "max_applications": -1,
+        "support": "priority",
+        "priority_processing": true,
+        "advanced_analytics": true
+      }
     },
     "current_period_start": "2023-01-01T00:00:00",
     "current_period_end": "2023-02-01T00:00:00"
   },
   "wallet": {
-    "balance_tokens": 1000,
+    "balance_tokens": 1500,
     "currency": "TOK",
-    "last_updated": "2023-01-01T00:00:00"
+    "last_updated": "2023-01-15T10:30:00"
   },
-  "payment_history": [...],
-  "transaction_history": [...],
-  "usage_history": [...]
+  "payment_history": [
+    {
+      "id": "pay_123abc",
+      "amount_cents": 2900,
+      "currency": "USD",
+      "status": "succeeded",
+      "date": "2023-01-01T00:00:00",
+      "description": "Payment for Pro subscription"
+    },
+    {
+      "id": "pay_456def",
+      "amount_cents": 2900,
+      "currency": "USD",
+      "status": "succeeded",
+      "date": "2022-12-01T00:00:00",
+      "description": "Payment for Pro subscription"
+    }
+  ],
+  "transaction_history": [
+    {
+      "id": "tx_789ghi",
+      "amount": 2000,
+      "type": "credit",
+      "balance_after": 2500,
+      "description": "Monthly allowance - Pro",
+      "date": "2023-01-01T00:00:00"
+    },
+    {
+      "id": "tx_012jkl",
+      "amount": 50,
+      "type": "debit",
+      "balance_after": 500,
+      "description": "Used for workflow",
+      "date": "2023-01-10T14:30:00"
+    },
+    {
+      "id": "tx_345mno",
+      "amount": 2000,
+      "type": "credit",
+      "balance_after": 2000,
+      "description": "Welcome bonus - Pro",
+      "date": "2022-12-01T00:00:00"
+    }
+  ],
+  "usage_history": [
+    {
+      "id": "usage_678pqr",
+      "feature": "Scholarship Application",
+      "amount": 50,
+      "cost_cents": null,
+      "date": "2023-01-10T14:30:00"
+    },
+    {
+      "id": "usage_901stu",
+      "feature": "Interview Session",
+      "amount": 30,
+      "cost_cents": null,
+      "date": "2023-01-10T15:00:00"
+    },
+    {
+      "id": "usage_234vwx",
+      "feature": "Resume Processing",
+      "amount": 10,
+      "cost_cents": null,
+      "date": "2023-01-09T09:00:00"
+    },
+    {
+      "id": "usage_567yza",
+      "feature": "Essay Generation",
+      "amount": 40,
+      "cost_cents": null,
+      "date": "2023-01-08T16:45:00"
+    }
+  ]
 }
+```
+
+**Payment History Details:**
+- Shows all subscription payments (succeeded and failed)
+- Includes payment amount, currency, status, and date
+- Descriptions indicate which plan the payment was for
+- Sorted by date (most recent first)
+- Limited to last 20 payments
+
+**Transaction History Details:**
+- Shows all wallet token transactions
+- **Types:**
+  - `credit`: Tokens added (grant, purchase, bonus)
+  - `debit`: Tokens deducted (usage)
+- **Descriptions:**
+  - "Welcome bonus - [Plan]": Initial tokens when subscribing
+  - "Monthly allowance - [Plan]": Recurring tokens from subscription
+  - "Token grant": Other token grants
+  - "Token purchase": Direct token purchases
+  - "Bonus tokens": Promotional bonuses
+  - "Used for [resource_type]": Token deductions for services
+- Shows balance after each transaction
+- Sorted by date (most recent first)
+- Limited to last 30 transactions
+
+**Usage History Details:**
+- Shows resource consumption records
+- **Features:**
+  - "Scholarship Application": Full workflow execution
+  - "Interview Session": Interview interactions
+  - "Resume Processing": Resume upload and analysis
+  - "Essay Generation": Essay writing service
+- Shows tokens consumed per feature
+- Optional cost in cents (for pay-per-use features)
+- Sorted by date (most recent first)
+- Limited to last 30 usage records
+
+**Frontend Usage:**
+```javascript
+const response = await fetch('/api/billing/details', {
+  headers: {
+    'x-user-id': userId
+  }
+});
+
+const data = await response.json();
+
+// Display subscription info
+console.log(`Plan: ${data.subscription.plan.name}`);
+console.log(`Tokens: ${data.wallet.balance_tokens}`);
+
+// Show payment history
+data.payment_history.forEach(payment => {
+  console.log(`${payment.date}: ${payment.description} - $${payment.amount_cents / 100}`);
+});
+
+// Show transaction history
+data.transaction_history.forEach(tx => {
+  const sign = tx.type === 'credit' ? '+' : '-';
+  console.log(`${tx.date}: ${sign}${tx.amount} tokens - ${tx.description}`);
+});
+
+// Show usage history
+data.usage_history.forEach(usage => {
+  console.log(`${usage.date}: ${usage.feature} used ${usage.amount} tokens`);
+});
 ```
 
 ---

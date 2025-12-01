@@ -9,10 +9,27 @@ import {
   Check
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuthClient } from '@/hooks/useAuthClient';
+import { triggerSignIn } from '@/app/auth-actions';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('input'); // For the Interactive Demo
   const { darkMode, toggleDarkMode } = useTheme();
+  const { user, isLoading } = useAuthClient();
+
+  const handleTryItOut = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (user) {
+      window.location.href = '/dashboard';
+    } else {
+      // Require sign-in before accessing /start
+      triggerSignIn();
+    }
+  };
+
+  const handleSignIn = () => {
+    triggerSignIn();
+  };
   // Handle Dark Mode
   useEffect(() => {
     if (darkMode) {
@@ -67,15 +84,28 @@ const App = () => {
             </div>
 
             <div className="flex items-center gap-4">
-              <button
+              {/* <button
                 onClick={toggleTheme}
                 className="p-2 rounded-full hover:bg-white/5 transition-colors"
               >
                 {darkMode ? <Sun className="w-5 h-5 text-white/60" /> : <Moon className="w-5 h-5 text-white/60" />}
+              </button> */}
+
+              {!isLoading && !user && (
+                <button
+                  onClick={handleSignIn}
+                  className="hidden md:block text-sm font-medium text-white/80 hover:text-white transition-colors"
+                >
+                  Sign In
+                </button>
+              )}
+
+              <button
+                onClick={handleTryItOut}
+                className="hidden sm:flex bg-white text-black px-5 py-2.5 rounded-full font-bold text-sm transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/20 active:scale-95 items-center gap-2"
+              >
+                {user ? 'Go to Dashboard' : 'Try it out'} <ArrowRight className="w-4 h-4" />
               </button>
-              <a href='/start' className="hidden sm:flex bg-white text-black px-5 py-2.5 rounded-full font-bold text-sm transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/20 active:scale-95 items-center gap-2">
-                Try it out <ArrowRight className="w-4 h-4" />
-              </a>
             </div>
           </div>
         </div>
@@ -110,9 +140,12 @@ const App = () => {
 
           {/* CTA Buttons */}
           <div className="mt-12 flex flex-col sm:flex-row gap-4 w-full justify-center">
-            <a href='/start' className="group relative flex items-center justify-center gap-3 bg-white hover:bg-white/90 text-black px-8 py-4 rounded-full font-semibold text-base shadow-lg shadow-white/10 transition-all hover:shadow-white/20 hover:shadow-xl">
-              <Play className="w-5 h-5 fill-current" /> Launch Live Demo
-            </a>
+            <button
+              onClick={handleTryItOut}
+              className="group relative flex items-center justify-center gap-3 bg-white hover:bg-white/90 text-black px-8 py-4 rounded-full font-semibold text-base shadow-lg shadow-white/10 transition-all hover:shadow-white/20 hover:shadow-xl"
+            >
+              <Play className="w-5 h-5 fill-current" /> {user ? 'Launch Dashboard' : 'Launch Live Demo'}
+            </button>
             <a href='https://github.com/Elliot-Sones/Anthropic_Hack' className="flex items-center justify-center gap-2 bg-white/5 backdrop-blur-sm border border-white/20 hover:bg-white/10 hover:border-white/30 text-white px-8 py-4 rounded-full font-semibold text-base transition-all">
               <Github className="w-5 h-5" /> View Repo
             </a>
