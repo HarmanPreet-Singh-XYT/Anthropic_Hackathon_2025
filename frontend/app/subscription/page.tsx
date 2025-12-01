@@ -471,7 +471,7 @@ const SubscriptionPage = () => {
                 )}
 
                 {/* Danger Zone - Dark Mode */}
-                {subscription?.status === 'active' && (
+                {(subscription?.status === 'active' && subscription?.plan.name !== "Free") && (
                     <div className="bg-slate-900 rounded-2xl shadow-sm border border-red-500/20 p-6 mt-8">
                         <h3 className="text-xl font-bold text-red-400 mb-2">Danger Zone</h3>
                         <p className="text-slate-400 mb-4">

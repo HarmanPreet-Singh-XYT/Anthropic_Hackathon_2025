@@ -10,30 +10,30 @@ import { getDashboardData, DashboardResponse, DashboardApplication, DashboardWor
 import { useAuthClient } from '@/hooks/useAuthClient';
 
 // --- MOCK DATA (For User, Wallet, Subscription) ---
-const mockUserData = {
-  user: {
-    id: "usr_99281",
-    email: "alex@university.edu",
-    created_at: "2025-04-01T10:00:00Z"
-  },
-  wallet: {
-    balance_tokens: 1200,
-    currency: "TOK",
-    last_updated: "2025-11-23T11:20:00Z"
-  },
-  subscription: {
-    status: "active",
-    plan: {
-      name: "Pro",
-      interval: "monthly",
-      price_cents: 999,
-      tokens_per_period: 2000,
-      features: {}
-    },
-    current_period_start: "2025-11-01T00:00:00Z",
-    current_period_end: "2025-12-01T00:00:00Z"
-  }
-};
+// const mockUserData = {
+//   user: {
+//     id: "usr_99281",
+//     email: "alex@university.edu",
+//     created_at: "2025-04-01T10:00:00Z"
+//   },
+//   wallet: {
+//     balance_tokens: 1200,
+//     currency: "TOK",
+//     last_updated: "2025-11-23T11:20:00Z"
+//   },
+//   subscription: {
+//     status: "active",
+//     plan: {
+//       name: "Pro",
+//       interval: "monthly",
+//       price_cents: 999,
+//       tokens_per_period: 2000,
+//       features: {}
+//     },
+//     current_period_start: "2025-11-01T00:00:00Z",
+//     current_period_end: "2025-12-01T00:00:00Z"
+//   }
+// };
 
 // --- HELPER COMPONENTS ---
 
@@ -271,7 +271,7 @@ const Dashboard = () => {
               <span className="text-sm font-bold text-slate-500 uppercase">{dashboardData?.subscription?.plan.name} PLAN</span>
             </div>
             <div>
-              <div className="text-3xl font-bold text-white mb-1">{dashboardData?.wallet?.balance_tokens || mockUserData.wallet.balance_tokens}</div>
+              <div className="text-3xl font-bold text-white mb-1">{dashboardData?.wallet?.balance_tokens}</div>
               <p className="text-sm text-slate-400">AI Credits available</p>
             </div>
           </div>
@@ -410,6 +410,7 @@ const Dashboard = () => {
                         {activity.type === 'transaction_deduction' && <Zap className="w-4 h-4 text-purple-400" />}
                         {activity.type === 'transaction_purchase' && <CreditCard className="w-4 h-4 text-green-400" />}
                         {activity.type === 'workflow_completed' && <CheckCircle2 className="w-4 h-4 text-blue-400" />}
+                        {activity.type === 'transaction_grant' && <Star className="w-4 h-4 text-green-400" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-200 truncate">{activity.description}</p>
@@ -448,7 +449,7 @@ const Dashboard = () => {
                   <span className="font-bold text-slate-200">
                     {dashboardData?.subscription?.current_period_end
                       ? new Date(dashboardData.subscription.current_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                      : 'Dec 1, 2025'}
+                      : 'N/A'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-sm p-3 bg-slate-800/50 rounded-xl border border-slate-800">

@@ -53,6 +53,19 @@ def seed_billing_plans():
                 features={"max_applications": -1, "support": "priority", "priority_processing": True, "advanced_analytics": True}
             ),
             BillingPlan(
+                slug="starter-annual",
+                name="Starter Annual",
+                price_cents=9990,  # $99.90 (save ~17%)
+                interval="year",
+                tokens_per_period=6000, # 500 * 12
+                features={
+                    "max_applications": 25, 
+                    "support": "email", 
+                    "priority_processing": False,
+                    "annual_discount": True
+                }
+            ),
+            BillingPlan(
                 slug="pro-annual",
                 name="Pro Annual",
                 price_cents=29000,  # $290.00 (save ~17%)

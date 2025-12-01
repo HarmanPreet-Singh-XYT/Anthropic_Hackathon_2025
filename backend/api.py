@@ -386,6 +386,31 @@ async def shutdown_event():
     print("Shutting down API server...")
 
 
+# ==================== Helper Functions ====================
+
+def sanitize_user_id(x_user_id: Optional[str]) -> Optional[str]:
+    """
+    Sanitize user_id from header, converting string 'null'/'undefined' to None
+    
+    This prevents issues where frontend sends string "null" or "undefined" 
+    instead of omitting the header, which would cause database query mismatches.
+    
+    Args:
+        x_user_id: Raw user ID from header
+        
+    Returns:
+        Sanitized user ID or None
+    """
+    if not x_user_id:
+        return None
+    
+    # Convert string representations of null to actual None
+    if x_user_id.lower() in ('null', 'undefined', 'none', ''):
+        return None
+    
+    return x_user_id.strip()
+
+
 # ==================== API Endpoints ====================
 
 @app.get("/")
@@ -433,11 +458,25 @@ async def upload_resume(
 ):
     """Upload and process a resume PDF"""
     
+    # SANITIZE user_id to prevent string "null" issues
+    raw_user_id = x_user_id
+    x_user_id = sanitize_user_id(x_user_id)
+    
+    print(f"📤 [UPLOAD] Raw header x_user_id: {repr(raw_user_id)}")
+    print(f"📤 [UPLOAD] Sanitized user_id: {repr(x_user_id)}")
+    
     if vector_store is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Vector store not initialized"
         )
+    
+    # Handle missing user_id
+    if not x_user_id:
+        print("⚠️  [API] No x-user-id header provided, using anonymous session")
+        x_user_id = None  # Will be stored as NULL in database
+    else:
+        print(f"✓ [API] Upload for user: {x_user_id}")
     
     # Validate file type
     if not file.filename.lower().endswith('.pdf'):
@@ -469,7 +508,7 @@ async def upload_resume(
     
     # Generate unique session ID
     session_id = str(uuid.uuid4())
-    print(f"🆔 [API] Generated session_id: {session_id} for resume upload")
+    print(f"🆔 [API] Generated session_id: {session_id} for resume upload (user: {x_user_id or 'anonymous'})")
     
     try:
         # Write file to disk
@@ -496,19 +535,57 @@ async def upload_resume(
                 detail=f"Failed to process PDF: {error_msg}"
             )
         
-        # Store resume session in database
+        # Store resume session in database WITH user_id
         text_preview = result.get("resume_text", "")[:500] if result.get("resume_text") else None
-        resume_session = ResumeSessionOperations.create(
-            db=db,
-            session_id=session_id,
-            filename=file.filename,
-            file_size_bytes=file_size,
-            chunks_stored=result.get("chunks_stored", 0),
-            text_preview=text_preview,
-            user_id=x_user_id
-        )
         
-        print(f"✓ [API] Resume processed and stored in DB for session: {session_id}")
+        print(f"📝 [API] Creating resume session in database...")
+        print(f"   - session_id: {session_id}")
+        print(f"   - filename: {file.filename}")
+        print(f"   - file_size_bytes: {file_size}")
+        print(f"   - chunks_stored: {result.get('chunks_stored', 0)}")
+        print(f"   - user_id: {x_user_id or 'NULL'}")
+        
+        try:
+            # Direct database insert with immediate commit
+            from database import ResumeSession
+            
+            resume_session = ResumeSession(
+                id=session_id,
+                user_id=x_user_id,
+                filename=file.filename,
+                file_size_bytes=file_size,
+                chunks_stored=result.get("chunks_stored", 0),
+                text_preview=text_preview
+            )
+            db.add(resume_session)
+            db.commit()
+            db.refresh(resume_session)
+            
+            print(f"✓ [API] Resume session created successfully: {resume_session.id}")
+            
+            # VERIFY it was actually saved
+            verification = db.query(ResumeSession).filter(ResumeSession.id == session_id).first()
+            if not verification:
+                print(f"❌ [API] CRITICAL: Resume was committed but not found in database!")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Resume was saved but could not be verified in database"
+                )
+            print(f"✓ [API] Resume session verified in database")
+            
+        except HTTPException:
+            raise
+        except Exception as db_error:
+            db.rollback()
+            print(f"❌ [API] Database error creating resume session: {db_error}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save resume to database: {str(db_error)}"
+            )
+        
+        print(f"✓ [API] Resume processed and stored in DB for session: {session_id} (user: {x_user_id or 'anonymous'})")
         
         return UploadResponse(
             success=True,
@@ -519,7 +596,8 @@ async def upload_resume(
                 "filename": file.filename,
                 "file_size_bytes": file_size,
                 "file_size_mb": round(file_size / 1024 / 1024, 2),
-                "text_preview": text_preview
+                "text_preview": text_preview,
+                "user_id": x_user_id  # Include in response so frontend knows
             }
         )
     
@@ -535,6 +613,295 @@ async def upload_resume(
     finally:
         if temp_path.exists():
             temp_path.unlink()
+
+
+@app.post("/api/admin/migrate-user-data")
+async def migrate_anonymous_data_to_user(
+    target_user_id: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Migrate all anonymous (NULL user_id) data to a specific user.
+    This is useful for claiming existing data after implementing user authentication.
+    """
+    from database import ResumeSession, WorkflowSession, Application, InterviewSession, UsageRecord
+    
+    try:
+        print(f"🔄 [Migration] Starting data migration to user: {target_user_id}")
+        
+        # 1. Migrate Resume Sessions
+        anonymous_resumes = db.query(ResumeSession).filter(
+            ResumeSession.user_id == None
+        ).all()
+        
+        resume_count = 0
+        for resume in anonymous_resumes:
+            resume.user_id = target_user_id
+            resume_count += 1
+            print(f"   ✓ Migrated resume: {resume.id}")
+        
+        # 2. Migrate Workflow Sessions
+        anonymous_workflows = db.query(WorkflowSession).filter(
+            WorkflowSession.user_id == None
+        ).all()
+        
+        workflow_count = 0
+        for workflow in anonymous_workflows:
+            workflow.user_id = target_user_id
+            workflow_count += 1
+            print(f"   ✓ Migrated workflow: {workflow.id}")
+        
+        # 3. Migrate Applications
+        anonymous_applications = db.query(Application).filter(
+            Application.user_id == None
+        ).all()
+        
+        application_count = 0
+        for app in anonymous_applications:
+            app.user_id = target_user_id
+            application_count += 1
+            print(f"   ✓ Migrated application: {app.id}")
+        
+        # 4. Migrate Usage Records
+        anonymous_usage = db.query(UsageRecord).filter(
+            UsageRecord.user_id == None
+        ).all()
+        
+        usage_count = 0
+        for usage in anonymous_usage:
+            usage.user_id = target_user_id
+            usage_count += 1
+        
+        # Commit all changes
+        db.commit()
+        
+        print(f"✅ [Migration] Migration complete!")
+        print(f"   • Resumes: {resume_count}")
+        print(f"   • Workflows: {workflow_count}")
+        print(f"   • Applications: {application_count}")
+        print(f"   • Usage Records: {usage_count}")
+        
+        return {
+            "success": True,
+            "message": f"Migrated anonymous data to user {target_user_id}",
+            "migrated": {
+                "resumes": resume_count,
+                "workflows": workflow_count,
+                "applications": application_count,
+                "usage_records": usage_count
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ [Migration] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Migration failed: {str(e)}"
+        )
+
+
+@app.get("/api/admin/check-schema")
+async def check_database_schema(db: Session = Depends(get_db)):
+    """Check database schema and constraints"""
+    from database import ResumeSession
+    from sqlalchemy import inspect
+    
+    try:
+        inspector = inspect(db.bind)
+        
+        # Get ResumeSession table info
+        columns = inspector.get_columns('resume_sessions')
+        indexes = inspector.get_indexes('resume_sessions')
+        pk_constraint = inspector.get_pk_constraint('resume_sessions')
+        foreign_keys = inspector.get_foreign_keys('resume_sessions')
+        
+        # Try a test insert and rollback
+        test_id = str(uuid.uuid4())
+        test_resume = ResumeSession(
+            id=test_id,
+            user_id="test_user",
+            filename="test.pdf",
+            file_size_bytes=100,
+            chunks_stored=1,
+            text_preview="test"
+        )
+        db.add(test_resume)
+        db.flush()  # Flush but don't commit
+        
+        # Check if it's in the session
+        found = db.query(ResumeSession).filter(ResumeSession.id == test_id).first()
+        test_passed = found is not None
+        
+        db.rollback()  # Rollback test insert
+        
+        return {
+            "schema": {
+                "columns": [
+                    {
+                        "name": col['name'],
+                        "type": str(col['type']),
+                        "nullable": col['nullable'],
+                        "default": col.get('default')
+                    }
+                    for col in columns
+                ],
+                "primary_key": pk_constraint,
+                "indexes": indexes,
+                "foreign_keys": foreign_keys
+            },
+            "test_insert": {
+                "passed": test_passed,
+                "message": "Test insert successful" if test_passed else "Test insert failed"
+            }
+        }
+    except Exception as e:
+        db.rollback()
+        import traceback
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/api/admin/orphaned-data")
+async def check_orphaned_data(db: Session = Depends(get_db)):
+    """Check for data without user_id"""
+    from database import ResumeSession, WorkflowSession, Application, InterviewSession, UsageRecord
+    
+    try:
+        orphaned_resumes = db.query(ResumeSession).filter(ResumeSession.user_id == None).all()
+        orphaned_workflows = db.query(WorkflowSession).filter(WorkflowSession.user_id == None).all()
+        orphaned_applications = db.query(Application).filter(Application.user_id == None).all()
+        orphaned_usage = db.query(UsageRecord).filter(UsageRecord.user_id == None).all()
+        
+        return {
+            "orphaned_data": {
+                "resumes": {
+                    "count": len(orphaned_resumes),
+                    "items": [
+                        {
+                            "id": r.id,
+                            "filename": r.filename,
+                            "created_at": r.created_at.isoformat()
+                        }
+                        for r in orphaned_resumes
+                    ]
+                },
+                "workflows": {
+                    "count": len(orphaned_workflows),
+                    "items": [
+                        {
+                            "id": w.id,
+                            "resume_session_id": w.resume_session_id,
+                            "status": w.status,
+                            "created_at": w.created_at.isoformat()
+                        }
+                        for w in orphaned_workflows
+                    ]
+                },
+                "applications": {
+                    "count": len(orphaned_applications),
+                    "items": [
+                        {
+                            "id": a.id,
+                            "workflow_session_id": a.workflow_session_id,
+                            "created_at": a.created_at.isoformat()
+                        }
+                        for a in orphaned_applications
+                    ]
+                },
+                "usage_records": {
+                    "count": len(orphaned_usage)
+                }
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error checking orphaned data: {str(e)}"
+        )
+
+
+@app.post("/api/test/create-resume-session")
+async def test_create_resume_session(
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Test endpoint to verify database write operations"""
+    from database import ResumeSession
+    
+    test_session_id = str(uuid.uuid4())
+    
+    try:
+        print(f"🧪 [TEST] Attempting to create resume session...")
+        print(f"   - session_id: {test_session_id}")
+        print(f"   - user_id: {x_user_id or 'NULL'}")
+        
+        # Method 1: Direct SQLAlchemy
+        print(f"   Method 1: Direct SQLAlchemy insert...")
+        resume_direct = ResumeSession(
+            id=test_session_id,
+            filename="test_resume.pdf",
+            file_size_bytes=12345,
+            chunks_stored=10,
+            text_preview="This is a test resume",
+            user_id=x_user_id
+        )
+        db.add(resume_direct)
+        db.commit()
+        db.refresh(resume_direct)
+        print(f"   ✓ Direct insert successful: {resume_direct.id}")
+        
+        # Verify it exists
+        check = db.query(ResumeSession).filter(ResumeSession.id == test_session_id).first()
+        if check:
+            print(f"   ✓ Verification successful: Record exists in database")
+        else:
+            print(f"   ✗ Verification failed: Record NOT found in database")
+        
+        # Method 2: Using Operations class
+        print(f"   Method 2: Using ResumeSessionOperations...")
+        test_session_id_2 = str(uuid.uuid4())
+        
+        try:
+            resume_ops = ResumeSessionOperations.create(
+                db=db,
+                session_id=test_session_id_2,
+                filename="test_resume_2.pdf",
+                file_size_bytes=54321,
+                chunks_stored=15,
+                text_preview="This is another test",
+                user_id=x_user_id
+            )
+            print(f"   ✓ Operations class successful: {resume_ops.id}")
+        except Exception as ops_error:
+            print(f"   ✗ Operations class failed: {ops_error}")
+            import traceback
+            traceback.print_exc()
+        
+        # Count total resumes
+        total = db.query(ResumeSession).count()
+        print(f"   Total resume sessions in DB: {total}")
+        
+        return {
+            "success": True,
+            "test_session_ids": [test_session_id, test_session_id_2],
+            "total_resumes": total,
+            "message": "Test successful - database writes are working"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ [TEST] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Test failed: {str(e)}"
+        )
 
 
 @app.get("/api/resume-stats")
@@ -727,14 +1094,34 @@ async def get_dashboard_data(
 ):
     """Get aggregated dashboard data for a user"""
     try:
-        if not x_user_id:
-            # For demo purposes, if no user_id, use a default test user
-            x_user_id = "test_user_demo"
+        # SANITIZE user_id to prevent string "null" issues
+        raw_user_id = x_user_id
+        x_user_id = sanitize_user_id(x_user_id)
         
-        print(f"📊 [API] Fetching dashboard data for user: {x_user_id}")
+        print(f"📊 [DASHBOARD] Raw header x_user_id: {repr(raw_user_id)}")
+        print(f"📊 [DASHBOARD] Sanitized user_id: {repr(x_user_id)}")
+        
+        # Enhanced debugging: Check what user_ids exist in database
+        from database import ResumeSession
+        
+        all_user_ids = db.query(ResumeSession.user_id).distinct().all()
+        print(f"📊 [DASHBOARD] All unique user_ids in database: {[uid[0] for uid in all_user_ids]}")
+        
+        # Check if exact match exists
+        if x_user_id:
+            exact_match_count = db.query(ResumeSession).filter(ResumeSession.user_id == x_user_id).count()
+            print(f"📊 [DASHBOARD] Exact matches for user_id={repr(x_user_id)}: {exact_match_count}")
+        
+        # For demo purposes, if no user_id after sanitization, use a default test user
+        if not x_user_id:
+            x_user_id = "test_user_demo"
+            print(f"📊 [DASHBOARD] No user_id provided, using demo user: {x_user_id}")
+        
+        print(f"📊 [DASHBOARD] Fetching dashboard data for user: {x_user_id}")
         
         # 1. Get/Create User & Wallet
         user = UserOperations.create_if_not_exists(db, x_user_id)
+        print(f"   ✓ User found: {user.id}")
         
         # 2. Build Wallet Info
         wallet_info = None
@@ -744,6 +1131,7 @@ async def get_dashboard_data(
                 currency=user.wallet.currency,
                 last_updated=user.wallet.updated_at
             )
+            print(f"   ✓ Wallet: {user.wallet.balance_tokens} tokens")
             
         # 3. Build Subscription Info
         sub_info = None
@@ -763,21 +1151,55 @@ async def get_dashboard_data(
                     current_period_start=active_sub.current_period_start,
                     current_period_end=active_sub.current_period_end
                 )
+                print(f"   ✓ Subscription: {active_sub.plan.name}")
         
-        # 4. Build Nested Resumes -> Workflows -> Applications/Interviews
-        resumes = ResumeSessionOperations.get_all(db, user_id=x_user_id)
+        # 4. Get ALL resume sessions (not just for this user initially, for debugging)
+        from database import WorkflowSession, Application, InterviewSession
+        
+        # Debug: Check total resume sessions in database
+        total_resumes = db.query(ResumeSession).count()
+        print(f"   📄 Total resume sessions in DB: {total_resumes}")
+        
+        # Get resumes for this user OR resumes with no user_id (legacy data)
+        resumes = db.query(ResumeSession).filter(
+            (ResumeSession.user_id == x_user_id) | (ResumeSession.user_id == None)
+        ).order_by(ResumeSession.created_at.desc()).all()
+        
+        print(f"   📄 Resume sessions found for user {x_user_id}: {len(resumes)}")
+        
+        if len(resumes) == 0:
+            print(f"   ⚠️  No resumes found. Checking if any workflows exist without user_id...")
+            # Check for orphaned workflows
+            orphaned_workflows = db.query(WorkflowSession).filter(
+                WorkflowSession.user_id == None
+            ).count()
+            print(f"   ⚠️  Found {orphaned_workflows} workflows with no user_id")
+        
         dashboard_resumes = []
         
         for resume in resumes:
-            # Get workflows for this resume
-            workflows = WorkflowSessionOperations.get_by_resume_session(db, resume.id)
+            print(f"   📝 Processing resume: {resume.id} ({resume.filename})")
+            
+            # Get workflows for this resume - check both with user_id and without
+            workflows = db.query(WorkflowSession).filter(
+                WorkflowSession.resume_session_id == resume.id
+            ).order_by(WorkflowSession.created_at.desc()).all()
+            
+            print(f"      → Found {len(workflows)} workflows for resume {resume.id}")
+            
             dashboard_workflows = []
             
             for wf in workflows:
+                print(f"         • Workflow {wf.id}: status={wf.status}, url={wf.scholarship_url[:50] if wf.scholarship_url else 'None'}...")
+                
                 # Get applications for this workflow
-                app = ApplicationOperations.get_by_workflow_session(db, wf.id)
+                app = db.query(Application).filter(
+                    Application.workflow_session_id == wf.id
+                ).first()
+                
                 dash_apps = []
                 if app:
+                    print(f"            → Application found: {app.id}")
                     dash_apps.append(DashboardApplication(
                         id=app.id,
                         session_id=app.workflow_session_id,
@@ -787,17 +1209,25 @@ async def get_dashboard_data(
                         had_interview=app.had_interview,
                         created_at=app.created_at
                     ))
+                else:
+                    print(f"            → No application found")
                 
                 # Get interview for this workflow
-                interview = InterviewSessionOperations.get_by_workflow(db, wf.id)
+                interview = db.query(InterviewSession).filter(
+                    InterviewSession.workflow_session_id == wf.id
+                ).first()
+                
                 dash_interview = None
                 if interview:
+                    print(f"            → Interview found: {interview.id}")
                     dash_interview = DashboardInterview(
                         id=interview.id,
                         current_target=interview.current_target,
                         created_at=interview.created_at,
                         completed_at=interview.completed_at
                     )
+                else:
+                    print(f"            → No interview found")
                 
                 dashboard_workflows.append(DashboardWorkflow(
                     id=wf.id,
@@ -819,9 +1249,12 @@ async def get_dashboard_data(
                 text_preview=resume.text_preview,
                 workflow_sessions=dashboard_workflows
             ))
+        
+        print(f"   ✓ Built {len(dashboard_resumes)} resume items with workflows")
             
         # 5. Get Usage Stats
         usage_stats = UsageRecordOperations.get_stats(db, x_user_id)
+        print(f"   ✓ Usage stats: {usage_stats}")
         
         # 6. Get Recent Activity
         activity_items = []
@@ -842,21 +1275,27 @@ async def get_dashboard_data(
                 timestamp=tx.created_at,
                 amount=tx.amount
             ))
-            
-        # Add recent completed workflows
-        recent_workflows = WorkflowSessionOperations.get_all(db, user_id=x_user_id, limit=5)
+        
+        # Add recent completed workflows - again check with or without user_id
+        recent_workflows = db.query(WorkflowSession).filter(
+            (WorkflowSession.user_id == x_user_id) | (WorkflowSession.user_id == None),
+            WorkflowSession.status == "complete"
+        ).order_by(WorkflowSession.updated_at.desc()).limit(5).all()
+        
         for wf in recent_workflows:
-            if wf.status == "complete":
-                activity_items.append(ActivityItem(
-                    type="workflow_completed",
-                    ref_id=wf.id,
-                    description=f"Completed workflow for scholarship",
-                    timestamp=wf.completed_at or wf.updated_at
-                ))
+            activity_items.append(ActivityItem(
+                type="workflow_completed",
+                ref_id=wf.id,
+                description=f"Completed workflow for scholarship",
+                timestamp=wf.completed_at or wf.updated_at
+            ))
         
         # Sort combined activity by timestamp desc
         activity_items.sort(key=lambda x: x.timestamp, reverse=True)
-        activity_items = activity_items[:10] # Keep top 10
+        activity_items = activity_items[:10]  # Keep top 10
+        
+        print(f"   ✓ Built {len(activity_items)} activity items")
+        print(f"✅ [API] Dashboard data prepared successfully")
         
         return DashboardResponse(
             user=UserInfo(id=user.id, email=user.email),
@@ -960,6 +1399,13 @@ async def start_workflow(
 ):
     """Start the full ScholarFit AI workflow"""
     
+    # SANITIZE user_id to prevent string "null" issues
+    raw_user_id = x_user_id
+    x_user_id = sanitize_user_id(x_user_id)
+    
+    print(f"🚀 [WORKFLOW] Raw header x_user_id: {repr(raw_user_id)}")
+    print(f"🚀 [WORKFLOW] Sanitized user_id: {repr(x_user_id)}")
+    
     if workflow_orchestrator is None:
         raise HTTPException(status_code=503, detail="Workflow system not initialized")
     
@@ -978,12 +1424,28 @@ async def start_workflow(
                 detail=f"Insufficient tokens. Required: {WORKFLOW_TOKEN_COST}, Available: {wallet.balance_tokens if wallet else 0}"
             )
         
-        # Deduct tokens
+        # Deduct tokens IMMEDIATELY and commit
         old_balance = wallet.balance_tokens
         wallet.balance_tokens -= WORKFLOW_TOKEN_COST
         wallet.updated_at = datetime.utcnow()
         
+        # Create transaction record
+        transaction = WalletTransaction(
+            user_id=x_user_id,
+            amount=-WORKFLOW_TOKEN_COST,
+            balance_after=wallet.balance_tokens,
+            kind='deduction',
+            reference_id=None,  # Will update with workflow_session_id after creation
+            metadata_json={'resource_type': 'workflow', 'scholarship_url': scholarship_url}
+        )
+        db.add(transaction)
+        
+        # CRITICAL: Commit the wallet deduction BEFORE starting background task
+        db.commit()
+        
         print(f"💰 [Workflow] Deducted {WORKFLOW_TOKEN_COST} tokens from user {x_user_id}. Balance: {old_balance} → {wallet.balance_tokens}")
+    else:
+        transaction = None
     
     # Handle resume source
     target_resume_path = resume_path
@@ -1013,20 +1475,9 @@ async def start_workflow(
         user_id=x_user_id
     )
     
-    # Record token deduction transaction and usage
-    if x_user_id:
-        from database import WalletTransaction, UsageRecord
-        
-        # Record wallet transaction
-        transaction = WalletTransaction(
-            user_id=x_user_id,
-            amount=-WORKFLOW_TOKEN_COST,
-            balance_after=wallet.balance_tokens,
-            kind='deduction',
-            reference_id=workflow_session_id,
-            metadata_json={'resource_type': 'workflow', 'scholarship_url': scholarship_url}
-        )
-        db.add(transaction)
+    # Update transaction reference_id and create usage record
+    if x_user_id and transaction:
+        transaction.reference_id = workflow_session_id
         
         # Record usage
         usage = UsageRecord(
@@ -1039,7 +1490,6 @@ async def start_workflow(
         db.add(usage)
         
         db.commit()
-    
     
     async def run_workflow_background():
         db_session = next(db_manager.get_session())
@@ -1089,6 +1539,40 @@ async def start_workflow(
         except Exception as e:
             print(f"[Workflow] Error: {e}")
             WorkflowSessionOperations.update_status(db_session, workflow_session_id, "error", str(e))
+            
+            # REFUND TOKENS ON ERROR
+            if x_user_id:
+                try:
+                    refund_session = next(db_manager.get_session())
+                    wallet_refund = refund_session.query(UserWallet).filter(
+                        UserWallet.user_id == x_user_id
+                    ).first()
+                    
+                    if wallet_refund:
+                        wallet_refund.balance_tokens += WORKFLOW_TOKEN_COST
+                        wallet_refund.updated_at = datetime.utcnow()
+                        
+                        # Create refund transaction
+                        refund_tx = WalletTransaction(
+                            user_id=x_user_id,
+                            amount=WORKFLOW_TOKEN_COST,
+                            balance_after=wallet_refund.balance_tokens,
+                            kind='grant',
+                            reference_id=workflow_session_id,
+                            metadata_json={
+                                'resource_type': 'workflow_refund',
+                                'reason': 'workflow_error',
+                                'error': str(e)[:200]
+                            }
+                        )
+                        refund_session.add(refund_tx)
+                        refund_session.commit()
+                        print(f"💰 [Workflow] Refunded {WORKFLOW_TOKEN_COST} tokens to user {x_user_id}")
+                    
+                    refund_session.close()
+                except Exception as refund_error:
+                    print(f"❌ [Workflow] Failed to refund tokens: {refund_error}")
+            
         finally:
             db_session.close()
     

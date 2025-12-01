@@ -68,7 +68,6 @@ export interface ErrorResponse {
 export async function uploadResume(file: File, userId: string): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
-
     const response = await fetch(`${API_BASE_URL}/api/upload-resume`, {
         method: 'POST',
         headers: {
@@ -276,7 +275,7 @@ export interface DashboardResponse {
 
 /**
  * Fetch dashboard data
- * @param userId - Logto User ID (sent via x-user-id header)
+ * @param userId - Logto User ID (sent via X-User-ID header)
  * @returns Dashboard data including user info, wallet, subscription, resume sessions, usage stats, and recent activity
  */
 export async function getDashboardData(userId: string): Promise<DashboardResponse> {
@@ -388,7 +387,7 @@ export async function createCheckoutSession(
     const response = await fetch(`${API_BASE_URL}/api/stripe/create-checkout-session`, {
         method: 'POST',
         headers: {
-            'x-user-id': userId,
+            'X-User-ID': userId,
         },
         body: formData,
     });
@@ -417,7 +416,7 @@ export async function createPortalSession(
     const response = await fetch(`${API_BASE_URL}/api/stripe/create-portal-session`, {
         method: 'POST',
         headers: {
-            'x-user-id': userId,
+            'X-User-ID': userId,
         },
         body: formData,
     });
@@ -439,7 +438,7 @@ export async function cancelSubscription(userId: string): Promise<CancelSubscrip
     const response = await fetch(`${API_BASE_URL}/api/subscription/cancel`, {
         method: 'POST',
         headers: {
-            'x-user-id': userId,
+            'X-User-ID': userId,
         },
     });
 
@@ -459,7 +458,7 @@ export async function cancelSubscription(userId: string): Promise<CancelSubscrip
 export async function getBillingDetails(userId: string): Promise<BillingDetailsResponse> {
     const response = await fetch(`${API_BASE_URL}/api/billing/details`, {
         headers: {
-            'x-user-id': userId,
+            'X-User-ID': userId,
         },
     });
 

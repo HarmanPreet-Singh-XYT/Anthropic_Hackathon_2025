@@ -6,7 +6,7 @@ import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2, Ale
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { uploadResume, startWorkflow, getWorkflowStatus } from '@/lib/api';
-import { useAuthClient } from '@/hooks/useAuthClient'; // or wherever you place it
+import { useAuthClient } from '@/hooks/useAuthClient';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 export default function StartPage() {
@@ -36,35 +36,74 @@ export default function StartPage() {
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+    // Helper function to get user-specific localStorage key
+    const getUserStorageKey = (userId: string) => `resume_session_${userId}`;
+
+    // Helper function to clear old/invalid sessions from localStorage
+    const clearInvalidSessions = (currentUserId: string) => {
+        // Clear any sessions that don't match the current user
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key?.startsWith('resume_session_') && key !== getUserStorageKey(currentUserId)) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        
+        // Also clear the old non-user-specific key if it exists
+        localStorage.removeItem('resume_session_id');
+    };
+
     // Check for existing resume session on mount
     useEffect(() => {
         const checkExistingSession = async () => {
+            // Wait for auth to be ready
+            if (isAuthLoading) {
+                return;
+            }
+
+            // If no user, clear checking state and return
+            if (!user || !user.sub) {
+                setCheckingSession(false);
+                return;
+            }
+
             try {
-                // Check URL params first, then localStorage
+                const userId = user.sub;
+                
+                // Clear any invalid/old sessions for other users
+                clearInvalidSessions(userId);
+
+                // Check URL params first, then user-specific localStorage
                 const urlResumeSession = searchParams.get('resume_session');
-                const storedResumeSession = localStorage.getItem('resume_session_id');
+                const storedResumeSession = localStorage.getItem(getUserStorageKey(userId));
                 const resumeSessionId = urlResumeSession || storedResumeSession;
 
                 if (!resumeSessionId) {
+                    console.log('[StartPage] No existing resume session found');
                     setCheckingSession(false);
                     return;
                 }
 
                 console.log('[StartPage] Checking for existing resume session:', resumeSessionId);
 
-                // Validate the session with backend
-                const response = await fetch(`${API_URL}/api/resume/session/${resumeSessionId}/validate`);
+                // Validate the session with backend, including user_id for verification
+                const response = await fetch(
+                    `${API_URL}/api/resume/session/${resumeSessionId}/validate?user_id=${encodeURIComponent(userId)}`
+                );
 
                 if (!response.ok) {
                     console.log('[StartPage] Failed to validate session');
-                    localStorage.removeItem('resume_session_id');
+                    localStorage.removeItem(getUserStorageKey(userId));
                     setCheckingSession(false);
                     return;
                 }
 
                 const data = await response.json();
 
-                if (data.valid) {
+                // Verify the session belongs to the current user
+                if (data.valid && data.user_id === userId) {
                     console.log(`[StartPage] Found valid resume session with ${data.chunks_count} chunks`);
                     setExistingResumeSession({
                         session_id: data.session_id,
@@ -73,20 +112,21 @@ export default function StartPage() {
                     });
                     setUseExistingResume(true);
                 } else {
-                    console.log('[StartPage] Resume session invalid, removing from storage');
-                    localStorage.removeItem('resume_session_id');
+                    console.log('[StartPage] Resume session invalid or belongs to different user, removing from storage');
+                    localStorage.removeItem(getUserStorageKey(userId));
                 }
             } catch (err) {
                 console.error('[StartPage] Error checking existing session:', err);
-                localStorage.removeItem('resume_session_id');
+                if (user?.sub) {
+                    localStorage.removeItem(getUserStorageKey(user.sub));
+                }
             } finally {
                 setCheckingSession(false);
             }
         };
 
         checkExistingSession();
-    }, [searchParams, API_URL]);
-
+    }, [searchParams, API_URL, user, isAuthLoading]);
 
     // Drag & Drop Handlers
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -131,6 +171,8 @@ export default function StartPage() {
         }
 
         setFile(f);
+        // When a new file is selected, clear the existing resume flag
+        setUseExistingResume(false);
     };
 
     const removeFile = (e: React.MouseEvent) => {
@@ -150,9 +192,18 @@ export default function StartPage() {
             return;
         }
 
-        // Allow submission with only URL if using existing resume
-        if (!useExistingResume && !file) return;
-        if (!url) return;
+        const userId = user.sub;
+
+        // Validate we have either a file or an existing resume session
+        if (!useExistingResume && !file) {
+            setError('Please upload a resume');
+            return;
+        }
+        
+        if (!url) {
+            setError('Please provide a scholarship URL');
+            return;
+        }
 
         setIsSubmitting(true);
         setError(null);
@@ -165,7 +216,22 @@ export default function StartPage() {
 
             // Step 1: Handle resume - either upload new or use existing
             if (useExistingResume && existingResumeSession) {
-                // Use existing resume session
+                // Double-check the existing session is still valid and belongs to this user
+                const validateResponse = await fetch(
+                    `${API_URL}/api/resume/session/${existingResumeSession.session_id}/validate?user_id=${encodeURIComponent(userId)}`
+                );
+                
+                if (!validateResponse.ok) {
+                    throw new Error('Existing resume session is no longer valid. Please upload a new resume.');
+                }
+
+                const validateData = await validateResponse.json();
+                
+                if (!validateData.valid || validateData.user_id !== userId) {
+                    localStorage.removeItem(getUserStorageKey(userId));
+                    throw new Error('Existing resume session is invalid or belongs to another user. Please upload a new resume.');
+                }
+
                 console.log("[StartPage] Using existing resume session:", existingResumeSession.session_id);
                 resumeSessionId = existingResumeSession.session_id;
                 setProgress(20);
@@ -176,17 +242,14 @@ export default function StartPage() {
                 setProgress(10);
                 setProgressStatus('Uploading your resume...');
 
-                const uploadFormData = new FormData();
-                uploadFormData.append('file', file);
-
-                const uploadData = await uploadResume(file, user.sub);
+                const uploadData = await uploadResume(file, userId);
                 resumeSessionId = uploadData.metadata.session_id;
 
                 console.log("[StartPage] Resume uploaded, session_id:", resumeSessionId);
                 console.log(`[StartPage] Stored ${uploadData.chunks_stored} chunks`);
 
-                // Store session_id for potential later use
-                localStorage.setItem('resume_session_id', resumeSessionId);
+                // Store session_id in user-specific localStorage
+                localStorage.setItem(getUserStorageKey(userId), resumeSessionId);
                 setProgress(20);
                 setProgressStatus('Resume uploaded successfully!');
             } else {
@@ -198,12 +261,9 @@ export default function StartPage() {
             setProgress(30);
             setProgressStatus('Analyzing scholarship requirements...');
 
-            const workflowFormData = new FormData();
-            workflowFormData.append('scholarship_url', url);
-            workflowFormData.append('resume_session_id', resumeSessionId);
-
-            const { session_id: workflowSessionId } = await startWorkflow(url, resumeSessionId, user.sub);
+            const { session_id: workflowSessionId } = await startWorkflow(url, resumeSessionId, userId);
             console.log("[StartPage] Workflow started");
+            console.log(`  User: ${userId}`);
             console.log(`  Resume session: ${resumeSessionId}`);
             console.log(`  Workflow session: ${workflowSessionId}`);
 
@@ -233,7 +293,7 @@ export default function StartPage() {
                     setProgressStatus('Finalizing analysis...');
                 }
 
-                const statusData = await getWorkflowStatus(workflowSessionId, user.sub);
+                const statusData = await getWorkflowStatus(workflowSessionId, userId);
                 console.log(`[StartPage] Poll #${pollCount}:`, statusData.status);
 
                 if (statusData.status === 'processing') {
@@ -273,16 +333,19 @@ export default function StartPage() {
     };
 
     // Show loading state while auth is being checked
-    if (isAuthLoading) {
+    if (isAuthLoading || checkingSession) {
         return (
             <div className="min-h-screen bg-black flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-white animate-spin" />
+                <div className="text-center space-y-4">
+                    <Loader2 className="w-8 h-8 text-white animate-spin mx-auto" />
+                    <p className="text-gray-400">
+                        {isAuthLoading ? 'Loading...' : 'Checking session...'}
+                    </p>
+                </div>
             </div>
         );
     }
 
-    // Allow access to the page regardless of auth status
-    // Auth will be checked on submit
     return (
         <div className="min-h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
 
@@ -331,36 +394,177 @@ export default function StartPage() {
                 />
             </div>
 
-            {/* Show loading state while checking authentication */}
-            {checkingSession ? (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="relative z-10 flex flex-col items-center gap-4"
-                >
-                    <Loader2 className="w-12 h-12 text-white animate-spin" />
-                    <p className="text-gray-400 text-lg">Loading session...</p>
-                </motion.div>
-            ) : (
-                <AnimatePresence mode="wait">
-                    {isSubmitting ? (
+            <AnimatePresence mode="wait">
+                {isSubmitting ? (
+                    <motion.div
+                        key="progress"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="relative z-10 w-full max-w-[700px] px-6 flex flex-col items-center justify-center space-y-8"
+                    >
+                        {/* Status Text */}
                         <motion.div
-                            key="progress"
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            className="relative z-10 w-full max-w-[700px] px-6 flex flex-col items-center justify-center space-y-8"
+                            className="text-center space-y-4"
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2 }}
                         >
-                            {/* Status Text */}
-                            <motion.div
-                                className="text-center space-y-4"
-                                initial={{ opacity: 0, y: -20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.2 }}
+                            <motion.h2
+                                className="text-4xl font-light tracking-tight"
+                                style={{
+                                    textShadow: '0 0 60px rgba(255,255,255,0.3)',
+                                }}
+                                animate={{
+                                    textShadow: [
+                                        '0 0 60px rgba(255,255,255,0.3)',
+                                        '0 0 80px rgba(255,255,255,0.5)',
+                                        '0 0 60px rgba(255,255,255,0.3)',
+                                    ]
+                                }}
+                                transition={{ duration: 2, repeat: Infinity }}
                             >
-                                <motion.h2
-                                    className="text-4xl font-light tracking-tight"
+                                {progressStatus}
+                            </motion.h2>
+                            <p className="text-gray-400 text-lg">
+                                This may take a moment...
+                            </p>
+                        </motion.div>
+
+                        {/* Progress Bar Container */}
+                        <motion.div
+                            className="w-full space-y-4"
+                                                        initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3 }}
+                        >
+                            {/* Progress percentage */}
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-400">Progress</span>
+                                <motion.span
+                                    className="text-white font-medium"
+                                    key={Math.floor(progress)}
+                                    initial={{ scale: 1.2 }}
+                                    animate={{ scale: 1 }}
+                                >
+                                    {Math.floor(progress)}%
+                                </motion.span>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="relative h-4 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm border border-white/20">
+                                {/* Animated background shimmer */}
+                                <motion.div
+                                    className="absolute inset-0 opacity-30"
                                     style={{
+                                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                                    }}
+                                    animate={{
+                                        x: ['-100%', '200%'],
+                                    }}
+                                    transition={{
+                                        duration: 2,
+                                        repeat: Infinity,
+                                        ease: 'linear',
+                                    }}
+                                />
+
+                                {/* Progress fill */}
+                                <motion.div
+                                    className="h-full bg-gradient-to-r from-white/90 to-white rounded-full relative overflow-hidden"
+                                    initial={{ width: '0%' }}
+                                    animate={{ width: `${progress}%` }}
+                                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                                    style={{
+                                        boxShadow: '0 0 20px rgba(255,255,255,0.5)',
+                                    }}
+                                >
+                                    {/* Shine effect on progress bar */}
+                                    <motion.div
+                                        className="absolute inset-0"
+                                        style={{
+                                            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
+                                        }}
+                                        animate={{
+                                            x: ['-100%', '200%'],
+                                        }}
+                                        transition={{
+                                            duration: 1.5,
+                                            repeat: Infinity,
+                                            ease: 'linear',
+                                        }}
+                                    />
+                                </motion.div>
+                            </div>
+                        </motion.div>
+
+                        {/* Animated dots */}
+                        <motion.div
+                            className="flex gap-2"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.5 }}
+                        >
+                            {[0, 1, 2].map((i) => (
+                                <motion.div
+                                    key={i}
+                                    className="w-2 h-2 bg-white rounded-full"
+                                    animate={{
+                                        scale: [1, 1.5, 1],
+                                        opacity: [0.3, 1, 0.3],
+                                    }}
+                                    transition={{
+                                        duration: 1.5,
+                                        repeat: Infinity,
+                                        delay: i * 0.2,
+                                    }}
+                                />
+                            ))}
+                        </motion.div>
+                    </motion.div>
+                ) : (
+                    <div className="relative z-10 w-full max-w-[620px] px-6 flex flex-col items-center" key="form">
+
+                        {/* Header */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 30 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
+                            className="text-center space-y-4 mb-8"
+                        >
+                            {/* Animated icon container */}
+                            <div className="relative inline-block">
+                                <motion.div
+                                    animate={{
+                                        rotate: 360,
+                                        scale: [1, 1.2, 1],
+                                    }}
+                                    transition={{
+                                        rotate: { duration: 20, repeat: Infinity, ease: "linear" },
+                                        scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+                                    }}
+                                    className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-white/20 rounded-full blur-2xl"
+                                />
+                                <motion.div
+                                    animate={{
+                                        y: [0, -15, 0],
+                                        rotate: [0, 10, -10, 0],
+                                    }}
+                                    transition={{ duration: 4, repeat: Infinity }}
+                                    className="relative"
+                                >
+                                    <Zap className="h-16 w-16 text-white mx-auto drop-shadow-2xl" fill="white" strokeWidth={1} />
+                                </motion.div>
+                            </div>
+
+                            {/* Glowing title */}
+                            <div className="relative">
+                                <motion.h1
+                                    className="text-white tracking-tight relative"
+                                    style={{
+                                        fontSize: '2.75rem',
+                                        fontWeight: 200,
+                                        letterSpacing: '-0.03em',
                                         textShadow: '0 0 60px rgba(255,255,255,0.3)',
                                     }}
                                     animate={{
@@ -372,208 +576,96 @@ export default function StartPage() {
                                     }}
                                     transition={{ duration: 2, repeat: Infinity }}
                                 >
-                                    {progressStatus}
-                                </motion.h2>
-                                <p className="text-gray-400 text-lg">
-                                    This may take a moment...
-                                </p>
-                            </motion.div>
-
-                            {/* Progress Bar Container */}
-                            <motion.div
-                                className="w-full space-y-4"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.3 }}
+                                    Scholarship Assistant
+                                </motion.h1>
+                            </div>
+                            <motion.p
+                                className="text-gray-400"
+                                animate={{ opacity: [0.6, 1, 0.6] }}
+                                transition={{ duration: 3, repeat: Infinity }}
                             >
-                                {/* Progress percentage */}
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-gray-400">Progress</span>
-                                    <motion.span
-                                        className="text-white font-medium"
-                                        key={Math.floor(progress)}
-                                        initial={{ scale: 1.2 }}
-                                        animate={{ scale: 1 }}
-                                    >
-                                        {Math.floor(progress)}%
-                                    </motion.span>
-                                </div>
-
-                                {/* Progress bar */}
-                                <div className="relative h-4 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm border border-white/20">
-                                    {/* Animated background shimmer */}
-                                    <motion.div
-                                        className="absolute inset-0 opacity-30"
-                                        style={{
-                                            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-                                        }}
-                                        animate={{
-                                            x: ['-100%', '200%'],
-                                        }}
-                                        transition={{
-                                            duration: 2,
-                                            repeat: Infinity,
-                                            ease: 'linear',
-                                        }}
-                                    />
-
-                                    {/* Progress fill */}
-                                    <motion.div
-                                        className="h-full bg-gradient-to-r from-white/90 to-white rounded-full relative overflow-hidden"
-                                        initial={{ width: '0%' }}
-                                        animate={{ width: `${progress}%` }}
-                                        transition={{ duration: 0.5, ease: 'easeOut' }}
-                                        style={{
-                                            boxShadow: '0 0 20px rgba(255,255,255,0.5)',
-                                        }}
-                                    >
-                                        {/* Shine effect on progress bar */}
-                                        <motion.div
-                                            className="absolute inset-0"
-                                            style={{
-                                                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
-                                            }}
-                                            animate={{
-                                                x: ['-100%', '200%'],
-                                            }}
-                                            transition={{
-                                                duration: 1.5,
-                                                repeat: Infinity,
-                                                ease: 'linear',
-                                            }}
-                                        />
-                                    </motion.div>
-                                </div>
-                            </motion.div>
-
-                            {/* Animated dots */}
-                            <motion.div
-                                className="flex gap-2"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 0.5 }}
-                            >
-                                {[0, 1, 2].map((i) => (
-                                    <motion.div
-                                        key={i}
-                                        className="w-2 h-2 bg-white rounded-full"
-                                        animate={{
-                                            scale: [1, 1.5, 1],
-                                            opacity: [0.3, 1, 0.3],
-                                        }}
-                                        transition={{
-                                            duration: 1.5,
-                                            repeat: Infinity,
-                                            delay: i * 0.2,
-                                        }}
-                                    />
-                                ))}
-                            </motion.div>
+                                Transform your application into success
+                            </motion.p>
                         </motion.div>
-                    ) : (
-                        <div className="relative z-10 w-full max-w-[620px] px-6 flex flex-col items-center" key="form">
 
-                            {/* Header */}
+                        {/* Main Card with 3D effect */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 50, rotateX: 20 }}
+                            animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                            transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
+                            whileHover={{
+                                y: -5,
+                                transition: { type: "spring", stiffness: 400 }
+                            }}
+                            className="relative w-full"
+                            style={{ perspective: 1000 }}
+                        >
+                            {/* Rotating gradient border */}
                             <motion.div
-                                initial={{ opacity: 0, y: 30 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
-                                className="text-center space-y-4 mb-8"
-                            >
-                                {/* Animated icon container */}
-                                <div className="relative inline-block">
-                                    <motion.div
-                                        animate={{
-                                            rotate: 360,
-                                            scale: [1, 1.2, 1],
-                                        }}
-                                        transition={{
-                                            rotate: { duration: 20, repeat: Infinity, ease: "linear" },
-                                            scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-                                        }}
-                                        className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-white/20 rounded-full blur-2xl"
-                                    />
-                                    <motion.div
-                                        animate={{
-                                            y: [0, -15, 0],
-                                            rotate: [0, 10, -10, 0],
-                                        }}
-                                        transition={{ duration: 4, repeat: Infinity }}
-                                        className="relative"
-                                    >
-                                        <Zap className="h-16 w-16 text-white mx-auto drop-shadow-2xl" fill="white" strokeWidth={1} />
-                                    </motion.div>
-                                </div>
-
-                                {/* Glowing title */}
-                                <div className="relative">
-                                    <motion.h1
-                                        className="text-white tracking-tight relative"
-                                        style={{
-                                            fontSize: '2.75rem',
-                                            fontWeight: 200,
-                                            letterSpacing: '-0.03em',
-                                            textShadow: '0 0 60px rgba(255,255,255,0.3)',
-                                        }}
-                                        animate={{
-                                            textShadow: [
-                                                '0 0 60px rgba(255,255,255,0.3)',
-                                                '0 0 80px rgba(255,255,255,0.5)',
-                                                '0 0 60px rgba(255,255,255,0.3)',
-                                            ]
-                                        }}
-                                        transition={{ duration: 2, repeat: Infinity }}
-                                    >
-                                        Scholarship Assistant
-                                    </motion.h1>
-                                </div>
-                                <motion.p
-                                    className="text-gray-400"
-                                    animate={{ opacity: [0.6, 1, 0.6] }}
-                                    transition={{ duration: 3, repeat: Infinity }}
-                                >
-                                    Transform your application into success
-                                </motion.p>
-                            </motion.div>
-
-                            {/* Main Card with 3D effect */}
-                            <motion.div
-                                initial={{ opacity: 0, y: 50, rotateX: 20 }}
-                                animate={{ opacity: 1, y: 0, rotateX: 0 }}
-                                transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
-                                whileHover={{
-                                    y: -5,
-                                    transition: { type: "spring", stiffness: 400 }
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                                className="absolute -inset-[2px] rounded-3xl opacity-70"
+                                style={{
+                                    background: 'linear-gradient(45deg, rgba(255,255,255,0.3), transparent, rgba(255,255,255,0.3), transparent)',
                                 }}
-                                className="relative w-full"
-                                style={{ perspective: 1000 }}
-                            >
-                                {/* Rotating gradient border */}
-                                <motion.div
-                                    animate={{ rotate: 360 }}
-                                    transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-                                    className="absolute -inset-[2px] rounded-3xl opacity-70"
-                                    style={{
-                                        background: 'linear-gradient(45deg, rgba(255,255,255,0.3), transparent, rgba(255,255,255,0.3), transparent)',
-                                    }}
-                                />
+                            />
 
-                                {/* Glowing background layer */}
-                                <motion.div
-                                    animate={{
-                                        boxShadow: [
-                                            '0 0 40px rgba(255,255,255,0.1)',
-                                            '0 0 80px rgba(255,255,255,0.2)',
-                                            '0 0 40px rgba(255,255,255,0.1)',
-                                        ]
-                                    }}
-                                    transition={{ duration: 3, repeat: Infinity }}
-                                    className="absolute inset-0 rounded-3xl"
-                                />
+                            {/* Glowing background layer */}
+                            <motion.div
+                                animate={{
+                                    boxShadow: [
+                                        '0 0 40px rgba(255,255,255,0.1)',
+                                        '0 0 80px rgba(255,255,255,0.2)',
+                                        '0 0 40px rgba(255,255,255,0.1)',
+                                    ]
+                                }}
+                                transition={{ duration: 3, repeat: Infinity }}
+                                className="absolute inset-0 rounded-3xl"
+                            />
 
-                                <div className="relative bg-black/70 backdrop-blur-3xl border border-white/20 rounded-3xl p-8 space-y-6">
+                            <div className="relative bg-black/70 backdrop-blur-3xl border border-white/20 rounded-3xl p-8 space-y-6">
 
-                                    {/* Resume Upload */}
+                                {/* Existing Resume Banner */}
+                                <AnimatePresence>
+                                    {existingResumeSession && useExistingResume && !file && (
+                                        <motion.div
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3">
+                                                    <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                                                    <div>
+                                                        <p className="text-sm text-green-200 font-medium">
+                                                            Using your existing resume
+                                                        </p>
+                                                        <p className="text-xs text-green-300/70 mt-1">
+                                                            {existingResumeSession.chunks_count} sections loaded
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setUseExistingResume(false);
+                                                        setExistingResumeSession(null);
+                                                        if (user?.sub) {
+                                                            localStorage.removeItem(getUserStorageKey(user.sub));
+                                                        }
+                                                    }}
+                                                    className="text-xs text-green-300/70 hover:text-green-200 transition-colors flex items-center gap-1"
+                                                >
+                                                    <RefreshCw className="w-3 h-3" />
+                                                    Upload New
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Resume Upload - Only show if not using existing resume */}
+                                {(!useExistingResume || file) && (
                                     <div className="space-y-3">
                                         <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
                                             <motion.div
@@ -590,13 +682,13 @@ export default function StartPage() {
                                             onDragLeave={handleDragLeave}
                                             onDrop={handleDrop}
                                             className={`
-                                                    relative h-48 rounded-2xl border transition-all duration-300 cursor-pointer
-                                                    flex flex-col items-center justify-center text-center
-                                                    ${isDragging
+                                                relative h-48 rounded-2xl border transition-all duration-300 cursor-pointer
+                                                flex flex-col items-center justify-center text-center
+                                                ${isDragging
                                                     ? 'border-white/40 bg-white/10 scale-[1.02]'
                                                     : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
                                                 }
-                                                `}
+                                            `}
                                         >
                                             <input
                                                 id="file-upload"
@@ -656,96 +748,96 @@ export default function StartPage() {
                                             </AnimatePresence>
                                         </div>
                                     </div>
+                                )}
 
-                                    {/* Scholarship URL */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
-                                            <motion.div
-                                                animate={{ scale: [1, 1.3, 1] }}
-                                                transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
-                                                className="w-2 h-2 bg-white rounded-full"
-                                            />
-                                            Scholarship URL
-                                        </div>
-
-                                        <div className="relative group">
-                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-white transition-colors">
-                                                <Link2 className="w-5 h-5" />
-                                            </div>
-                                            <input
-                                                type="text"
-                                                value={url}
-                                                onChange={(e) => setUrl(e.target.value)}
-                                                placeholder="https://example.com/scholarship"
-                                                className="w-full h-14 bg-black/50 border border-white/20 rounded-xl pl-12 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-white/40 focus:bg-black/70 transition-all"
-                                            />
-                                        </div>
+                                {/* Scholarship URL */}
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
+                                        <motion.div
+                                            animate={{ scale: [1, 1.3, 1] }}
+                                            transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
+                                            className="w-2 h-2 bg-white rounded-full"
+                                        />
+                                        Scholarship URL
                                     </div>
 
-                                    {/* Error Message */}
-                                    <AnimatePresence>
-                                        {error && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: -10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -10 }}
-                                                className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3"
-                                            >
-                                                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-                                                <p className="text-sm text-red-200">{error}</p>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    {/* Success Message */}
-                                    <AnimatePresence>
-                                        {success && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: -10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -10 }}
-                                                className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center gap-3"
-                                            >
-                                                <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                                <p className="text-sm text-green-200 font-medium">{success.message}</p>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    {/* Action Button */}
-                                    <motion.button
-                                        onClick={handleSubmit}
-                                        disabled={(!file && !url) || isSubmitting}
-                                        whileHover={(!file && !url) || isSubmitting ? {} : { scale: 1.02 }}
-                                        whileTap={(!file && !url) || isSubmitting ? {} : { scale: 0.98 }}
-                                        className={`
-                                                w-full h-14 rounded-xl font-medium text-lg transition-all duration-300 
-                                                flex items-center justify-center gap-2
-                                                ${(!file && !url)
-                                                ? 'bg-white/10 text-gray-600 cursor-not-allowed'
-                                                : isSubmitting
-                                                    ? 'bg-white text-black cursor-wait'
-                                                    : 'bg-white text-black hover:bg-gray-100 shadow-lg shadow-white/20'}
-                                            `}
-                                    >
-                                        {isSubmitting ? (
-                                            <>
-                                                <Loader2 className="w-5 h-5 animate-spin" />
-                                                Processing...
-                                            </>
-                                        ) : (
-                                            <>
-                                                Analyze <ArrowRight className="w-5 h-5" />
-                                            </>
-                                        )}
-                                    </motion.button>
-
+                                    <div className="relative group">
+                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-white transition-colors">
+                                            <Link2 className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={url}
+                                            onChange={(e) => setUrl(e.target.value)}
+                                            placeholder="https://example.com/scholarship"
+                                            className="w-full h-14 bg-black/50 border border-white/20 rounded-xl pl-12 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-white/40 focus:bg-black/70 transition-all"
+                                        />
+                                    </div>
                                 </div>
-                            </motion.div>
-                        </div>
-                    )}
-                </AnimatePresence>
-            )}
+
+                                {/* Error Message */}
+                                <AnimatePresence>
+                                    {error && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3"
+                                        >
+                                            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                                            <p className="text-sm text-red-200">{error}</p>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Success Message */}
+                                <AnimatePresence>
+                                    {success && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center gap-3"
+                                        >
+                                            <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
+                                            <p className="text-sm text-green-200 font-medium">{success.message}</p>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Action Button */}
+                                <motion.button
+                                    onClick={handleSubmit}
+                                    disabled={(!file && !useExistingResume) || !url || isSubmitting}
+                                    whileHover={(!file && !useExistingResume) || !url || isSubmitting ? {} : { scale: 1.02 }}
+                                    whileTap={(!file && !useExistingResume) || !url || isSubmitting ? {} : { scale: 0.98 }}
+                                    className={`
+                                        w-full h-14 rounded-xl font-medium text-lg transition-all duration-300 
+                                        flex items-center justify-center gap-2
+                                        ${(!file && !useExistingResume) || !url
+                                            ? 'bg-white/10 text-gray-600 cursor-not-allowed'
+                                            : isSubmitting
+                                                ? 'bg-white text-black cursor-wait'
+                                                : 'bg-white text-black hover:bg-gray-100 shadow-lg shadow-white/20'}
+                                    `}
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            Processing...
+                                        </>
+                                    ) : (
+                                        <>
+                                            Analyze <ArrowRight className="w-5 h-5" />
+                                        </>
+                                    )}
+                                </motion.button>
+
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
