@@ -1508,7 +1508,8 @@ async def start_workflow(
                 WorkflowSessionOperations.update_checkpoint(db_session, workflow_session_id, final_state)
                 WorkflowSessionOperations.update_results(db_session, workflow_session_id, {
                     "matchmaker_results": final_state.get("matchmaker_results"),
-                    "gaps": final_state.get("identified_gaps")
+                    "gaps": final_state.get("identified_gaps"),
+                    "scholarship_intelligence": final_state.get("scholarship_intelligence")
                 })
             else:
                 # Complete workflow
@@ -1880,7 +1881,10 @@ async def generate_outreach_email(
         raise HTTPException(status_code=404, detail="Session not found")
     
     if not workflow.scholarship_intelligence:
-        raise HTTPException(status_code=400, detail="Workflow not complete")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Scholarship intelligence not available. Workflow status: {workflow.status}. Please ensure the workflow has completed the scout phase."
+        )
     
     intelligence = workflow.scholarship_intelligence or {}
     official = intelligence.get("official", {})
