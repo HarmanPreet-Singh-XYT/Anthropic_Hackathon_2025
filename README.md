@@ -1,7 +1,7 @@
 # ScholarMatch AI
 <div align="center">
-  <a href="https://youtu.be/JfjWb-Z1h7U">
-    <img src="https://img.youtube.com/vi/JfjWb-Z1h7U/hqdefault.jpg" alt="Watch the video" />
+  <a href="https://youtu.be/JhZocIzI3QA">
+    <img src="https://img.youtube.com/vi/JhZocIzI3QA/hqdefault.jpg" alt="Watch the video" />
   </a>
 </div>
 
