@@ -1,8 +1,8 @@
 "use client"
 import React, { useState } from 'react';
-import { 
-  CreditCard, CheckCircle2, Zap, Calendar, 
-  Download, ArrowUpRight, GraduationCap, 
+import {
+  CreditCard, CheckCircle2, Zap, Calendar,
+  Download, ArrowUpRight, GraduationCap,
   TrendingUp, Activity, ShieldCheck
 } from 'lucide-react';
 
@@ -25,15 +25,15 @@ const SubscriptionPage = () => {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
       <div className="font-sans selection:bg-purple-500/30 selection:text-purple-600 dark:selection:text-purple-300 dark:text-slate-100">
-        
+
         {/* Same Navbar Wrapper as Profile (Simplified for brevity) */}
         <nav className="sticky top-0 z-50 w-full backdrop-blur-xl bg-white/70 dark:bg-slate-950/70 border-b border-slate-200/50 dark:border-slate-800">
-           <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2 font-black text-xl tracking-tighter text-slate-900 dark:text-white">
               <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
                 <GraduationCap className="w-5 h-5" />
               </div>
-              ScholarFit<span className="text-purple-600">.ai</span>
+              ScholarMatch<span className="text-purple-600">.ai</span>
             </div>
             <button onClick={() => setIsDark(!isDark)} className="text-xs font-mono font-bold uppercase text-slate-500 hover:text-purple-500 transition-colors">
               {isDark ? "Light Mode" : "Dark Mode"}
@@ -42,7 +42,7 @@ const SubscriptionPage = () => {
         </nav>
 
         <main className="relative max-w-7xl mx-auto px-6 py-12">
-          
+
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700/50 text-green-700 dark:text-green-300 text-xs font-bold font-mono tracking-wider mb-4 animate-fade-in-up">
@@ -53,7 +53,7 @@ const SubscriptionPage = () => {
                 Resource Allocation
               </h1>
             </div>
-            
+
             {/* Action Buttons */}
             <div className="flex gap-4">
               <button className="px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors">
@@ -66,14 +66,14 @@ const SubscriptionPage = () => {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            
+
             {/* Left Col: Plan & Usage */}
             <div className="md:col-span-2 space-y-8">
-              
+
               {/* Plan Card - Tech Style */}
               <div className="relative overflow-hidden bg-slate-900 text-white rounded-3xl p-8 border border-slate-800 shadow-2xl">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
-                
+
                 <div className="relative z-10 flex justify-between items-start">
                   <div>
                     <h3 className="font-mono text-slate-400 text-xs uppercase tracking-widest mb-2">Current Tier</h3>
@@ -111,7 +111,7 @@ const SubscriptionPage = () => {
                 </div>
 
                 <div className="relative h-6 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
-                  <div 
+                  <div
                     className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 transition-all duration-1000 ease-out"
                     style={{ width: `${usagePercent}%` }}
                   >
@@ -119,7 +119,7 @@ const SubscriptionPage = () => {
                     <div className="absolute top-0 right-0 bottom-0 w-full bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 translate-x-[-100%] animate-[shimmer_2s_infinite]"></div>
                   </div>
                 </div>
-                
+
                 <p className="mt-4 text-xs text-slate-500 dark:text-slate-400 font-mono">
                   Cycle resets in <span className="text-slate-900 dark:text-white font-bold">12 days</span>.
                 </p>
@@ -163,22 +163,22 @@ const SubscriptionPage = () => {
 
             {/* Right Col: Payment Method */}
             <div className="space-y-6">
-              
+
               {/* Glass Credit Card */}
               <div className="relative h-56 rounded-3xl p-8 text-white shadow-2xl overflow-hidden group">
                 {/* Background Gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-black z-0"></div>
                 <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl z-0 -translate-y-1/2 translate-x-1/2 group-hover:bg-purple-500/30 transition-colors"></div>
-                
+
                 {/* Card Content */}
-                                <div className="relative z-10 flex flex-col justify-between h-full">
+                <div className="relative z-10 flex flex-col justify-between h-full">
                   <div className="flex justify-between items-start">
                     <CreditCard className="w-8 h-8 text-slate-400" />
                     <span className="font-mono text-xs bg-white/10 px-2 py-1 rounded backdrop-blur-md">
                       PRIMARY
                     </span>
                   </div>
-                  
+
                   <div className="space-y-1">
                     <div className="font-mono text-xl tracking-widest text-slate-300">
                       •••• •••• •••• 4242
@@ -191,8 +191,8 @@ const SubscriptionPage = () => {
                       <div className="font-bold text-sm tracking-wide">ALEX DEVELOPER</div>
                     </div>
                     <div className="text-right">
-                       <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Expires</div>
-                       <div className="font-mono text-sm font-bold">12/28</div>
+                      <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Expires</div>
+                      <div className="font-mono text-sm font-bold">12/28</div>
                     </div>
                   </div>
                 </div>
@@ -202,13 +202,13 @@ const SubscriptionPage = () => {
               <div className="bg-white dark:bg-slate-900/50 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6">
                 <h3 className="font-bold text-slate-900 dark:text-white mb-4">Payment Configuration</h3>
                 <div className="flex items-center gap-4 mb-6 p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800">
-                   <div className="w-12 h-8 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 flex items-center justify-center font-bold text-xs italic text-slate-800 dark:text-slate-200">
-                     VISA
-                   </div>
-                   <div>
-                     <div className="text-sm font-bold text-slate-900 dark:text-white">Visa ending in 4242</div>
-                     <div className="text-xs text-slate-500 font-mono">Added Nov 2024</div>
-                   </div>
+                  <div className="w-12 h-8 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 flex items-center justify-center font-bold text-xs italic text-slate-800 dark:text-slate-200">
+                    VISA
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 dark:text-white">Visa ending in 4242</div>
+                    <div className="text-xs text-slate-500 font-mono">Added Nov 2024</div>
+                  </div>
                 </div>
                 <button className="w-full py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-sm">
                   Update Payment Method

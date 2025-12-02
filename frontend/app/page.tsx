@@ -11,6 +11,7 @@ import {
 import { useTheme } from '@/context/ThemeContext';
 import { useAuthClient } from '@/hooks/useAuthClient';
 import { triggerSignIn } from '@/app/auth-actions';
+import { Navigation } from '@/components/Navigation';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('input'); // For the Interactive Demo
@@ -66,50 +67,7 @@ const App = () => {
       </div>
 
       {/* Navigation */}
-      <nav className="fixed w-full z-50 backdrop-blur-xl bg-black/50 border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
-              <div className="bg-white/10 p-2 rounded-lg border border-white/20">
-                <Brain className="w-5 h-5 text-white" />
-              </div>
-              <span className="font-bold text-xl tracking-tight text-white">ScholarMatch</span>
-            </div>
-
-            <div className="hidden md:flex items-center space-x-8 font-medium text-sm">
-              <a href="#how-it-works" className="text-white/60 hover:text-white transition-all">Process</a>
-              <a href="/start" className="text-white/60 hover:text-white transition-all">Live Demo</a>
-              <a href="/outreach" className="text-white/60 hover:text-white transition-all">Outreach</a>
-              <a href="#features" className="text-white/60 hover:text-white transition-all">Features</a>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* <button
-                onClick={toggleTheme}
-                className="p-2 rounded-full hover:bg-white/5 transition-colors"
-              >
-                {darkMode ? <Sun className="w-5 h-5 text-white/60" /> : <Moon className="w-5 h-5 text-white/60" />}
-              </button> */}
-
-              {!isLoading && !user && (
-                <button
-                  onClick={handleSignIn}
-                  className="hidden md:block text-sm font-medium text-white/80 hover:text-white transition-colors"
-                >
-                  Sign In
-                </button>
-              )}
-
-              <button
-                onClick={handleTryItOut}
-                className="hidden sm:flex bg-white text-black px-5 py-2.5 rounded-full font-bold text-sm transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/20 active:scale-95 items-center gap-2"
-              >
-                {user ? 'Go to Dashboard' : 'Try it out'} <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navigation variant="landing" />
 
       {/* HERO SECTION */}
       <section className="relative pt-32 pb-24 lg:pt-48 lg:pb-32 min-h-screen flex items-center">
@@ -146,7 +104,7 @@ const App = () => {
             >
               <Play className="w-5 h-5 fill-current" /> {user ? 'Launch Dashboard' : 'Launch Live Demo'}
             </button>
-            <a href='https://github.com/Elliot-Sones/Anthropic_Hack' className="flex items-center justify-center gap-2 bg-white/5 backdrop-blur-sm border border-white/20 hover:bg-white/10 hover:border-white/30 text-white px-8 py-4 rounded-full font-semibold text-base transition-all">
+            <a href='https://github.com/HarmanPreet-Singh-XYT/Anthropic_Hackathon_2025' className="flex items-center justify-center gap-2 bg-white/5 backdrop-blur-sm border border-white/20 hover:bg-white/10 hover:border-white/30 text-white px-8 py-4 rounded-full font-semibold text-base transition-all">
               <Github className="w-5 h-5" /> View Repo
             </a>
           </div>
@@ -949,7 +907,7 @@ const App = () => {
                 AI that helps students win scholarships by understanding the hidden values of every committee.
               </p>
               <div className="flex gap-4">
-                <a href="https://github.com/Elliot-Sones/Anthropic_Hack" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/10 hover:text-white transition-all">
+                <a href="https://github.com/HarmanPreet-Singh-XYT/Anthropic_Hackathon_2025" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/10 hover:text-white transition-all">
                   <Github className="w-5 h-5" />
                 </a>
               </div>
@@ -969,14 +927,14 @@ const App = () => {
               <h4 className="font-semibold mb-6 text-white">Resources</h4>
               <ul className="space-y-4 text-sm text-white/50">
                 <li><a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a></li>
-                <li><a href="https://github.com/Elliot-Sones/Anthropic_Hack" className="hover:text-white transition-colors">Documentation</a></li>
+                <li><a href="https://github.com/HarmanPreet-Singh-XYT/Anthropic_Hackathon_2025" className="hover:text-white transition-colors">Documentation</a></li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-semibold mb-6 text-white">Hackathon</h4>
               <ul className="space-y-4 text-sm text-white/50">
-                <li><a href="https://github.com/Elliot-Sones/Anthropic_Hack" className="hover:text-white transition-colors">Github Repo</a></li>
+                <li><a href="https://github.com/HarmanPreet-Singh-XYT/Anthropic_Hackathon_2025" className="hover:text-white transition-colors">Github Repo</a></li>
                 <li><span className="text-white/30">Agentiiv 2025</span></li>
               </ul>
             </div>

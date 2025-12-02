@@ -213,7 +213,7 @@ const Dashboard = () => {
             <div className="bg-purple-600 p-1.5 rounded-lg">
               <GraduationCap className="w-5 h-5 text-white" />
             </div>
-            <a href="/" className="font-bold text-lg text-white hover:text-purple-400 transition-colors">ScholarFit</a>
+            <a href="/" className="font-bold text-lg text-white hover:text-purple-400 transition-colors">ScholarMatch</a>
           </div>
 
           <div className="flex items-center gap-6">
@@ -233,7 +233,7 @@ const Dashboard = () => {
             <CheckCircle2 className="w-5 h-5 text-green-400" />
             <div>
               <p className="font-bold text-green-400">Subscription activated!</p>
-              <p className="text-sm text-green-300/80">Your payment was successful. Welcome to ScholarFit Pro!</p>
+              <p className="text-sm text-green-300/80">Your payment was successful. Welcome to ScholarMatch Pro!</p>
             </div>
           </div>
         </div>

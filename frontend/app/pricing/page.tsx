@@ -7,17 +7,18 @@ import {
 import { getBillingPlans, createCheckoutSession, createPortalSession, getBillingDetails, BillingPlan } from '@/lib/api';
 import { useAuthClient } from '@/hooks/useAuthClient';
 import { triggerSignIn } from '@/app/auth-actions';
+import { Navigation } from '@/components/Navigation';
 
 const PricingPage = () => {
   const [isAnnual, setIsAnnual] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
-  
+
   // Data State
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  
+
   // Subscription State
   const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
@@ -39,11 +40,11 @@ const PricingPage = () => {
             const billingDetails = await getBillingDetails(user.sub);
             if (billingDetails.subscription) {
               setSubscriptionStatus(billingDetails.subscription.status);
-              
+
               // Match active plan
               const activePlanName = billingDetails.subscription.plan.name;
               const matchingPlan = plansData.plans.find(p => p.name === activePlanName);
-              
+
               if (matchingPlan) {
                 setCurrentPlanId(matchingPlan.id);
                 // Auto-toggle to annual if user is on an annual plan
@@ -69,7 +70,7 @@ const PricingPage = () => {
   }, [user, isAuthLoading]);
 
   // --- PLAN SELECTION LOGIC ---
-  
+
   // 1. Scout (Free)
   const scoutPlan = plans.find(p => p.slug === 'free');
 
@@ -122,7 +123,7 @@ const PricingPage = () => {
   // Helper to determine button state
   const getButtonConfig = (targetPlan: BillingPlan | undefined, isFree = false) => {
     if (loading) return { text: 'Loading...', disabled: true, className: 'opacity-50 cursor-not-allowed w-full py-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400' };
-    
+
     // Free Plan Logic
     if (isFree) {
       const isPaidUser = currentPlanId && subscriptionStatus === 'active';
@@ -162,11 +163,11 @@ const PricingPage = () => {
     if (!plan) return '--';
     return (plan.price_cents / 100).toFixed(2); // Displays $9.99 instead of $9
   }
-  
+
   // Format rounded price for Pro (cleaner look)
   const formatRoundPrice = (plan: BillingPlan | undefined) => {
-      if (!plan) return '--';
-      return Math.floor(plan.price_cents / 100);
+    if (!plan) return '--';
+    return Math.floor(plan.price_cents / 100);
   }
 
   // Feature Matrix Data
@@ -205,22 +206,7 @@ const PricingPage = () => {
       <div className="font-sans selection:bg-purple-500/30 selection:text-purple-600 dark:selection:text-purple-300 dark:text-slate-100 transition-colors duration-300">
 
         {/* Navbar */}
-        <nav className="fixed top-0 w-full z-50 border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl">
-          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-2 font-black text-xl tracking-tighter">
-              <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white">
-                <Brain className="w-5 h-5" />
-              </div>
-              <span className="text-slate-900 dark:text-white">ScholarFit<span className="text-purple-600">.ai</span></span>
-            </div>
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              {isDark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
-            </button>
-          </div>
-        </nav>
+        <Navigation variant="default" />
 
         {/* Active Subscription Banner */}
         {currentPlanId && subscriptionStatus === 'active' && (
@@ -313,7 +299,7 @@ const PricingPage = () => {
                 <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">$0</span>
                 <span className="text-slate-400 font-mono">/forever</span>
               </div>
-              
+
               <button
                 onClick={getButtonConfig(scoutPlan, true).onClick}
                 className={getButtonConfig(scoutPlan, true).className}
@@ -336,26 +322,26 @@ const PricingPage = () => {
               </div>
               <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white mb-2">The Starter</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 h-10">Perfect for students applying to a targeted list.</p>
-              
+
               <div className="flex items-baseline gap-1 mb-8">
                 <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">
                   ${formatPrice(starterPlan)}
                 </span>
                 <span className="text-slate-400 font-mono">/{isAnnual ? 'yr' : 'mo'}</span>
               </div>
-              
+
               <button
-                 onClick={getButtonConfig(starterPlan).onClick}
-                 disabled={getButtonConfig(starterPlan).disabled}
-                 className={getButtonConfig(starterPlan).className}
-               >
-                 {checkoutLoading === starterPlan?.slug ? (
-                    <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Processing...
-                    </>
-                 ) : getButtonConfig(starterPlan).text}
-               </button>
+                onClick={getButtonConfig(starterPlan).onClick}
+                disabled={getButtonConfig(starterPlan).disabled}
+                className={getButtonConfig(starterPlan).className}
+              >
+                {checkoutLoading === starterPlan?.slug ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : getButtonConfig(starterPlan).text}
+              </button>
 
               <ul className="space-y-4 text-sm mt-8 flex-1">
                 <li className="flex gap-3 text-slate-600 dark:text-slate-300"><Check className="w-5 h-5 text-blue-500 flex-shrink-0" /> 25 Applications / mo</li>
@@ -388,7 +374,7 @@ const PricingPage = () => {
 
               <div className="flex items-baseline gap-1 mb-8">
                 <span className="text-5xl font-black text-white tracking-tighter">
-                   ${formatRoundPrice(scholarPlan)}
+                  ${formatRoundPrice(scholarPlan)}
                 </span>
                 <span className="text-slate-500 font-mono">/{isAnnual ? 'yr' : 'mo'}</span>
               </div>
@@ -477,7 +463,7 @@ const PricingPage = () => {
               <div>
                 <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">30-Day "Application Sent" Guarantee</h3>
                 <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                  If ScholarFit doesn't help you submit at least 5 high-quality applications in your first month on any paid plan, we'll refund your subscription in full. No questions asked.
+                  If ScholarMatch doesn't help you submit at least 5 high-quality applications in your first month on any paid plan, we'll refund your subscription in full. No questions asked.
                 </p>
               </div>
             </div>
@@ -525,7 +511,7 @@ const PricingPage = () => {
             <div className="col-span-2 md:col-span-1 space-y-4">
               <div className="flex items-center gap-2 font-black text-white tracking-tighter">
                 <Brain className="w-5 h-5 text-purple-500" />
-                <span>ScholarFit.ai</span>
+                <span>ScholarMatch.ai</span>
               </div>
               <p className="text-slate-500 leading-relaxed">
                 Transforming scholarship applications through intelligent narrative alignment and multi-agent orchestration.
@@ -568,7 +554,7 @@ const PricingPage = () => {
           <div className="relative border-t border-slate-800/50">
             <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between items-center gap-4">
               <p className="text-slate-600 text-xs">
-                © 2024 ScholarFit AI Inc. All rights reserved. Built with Anthropic Claude 3.5.
+                © 2024 ScholarMatch AI Inc. All rights reserved. Built with Anthropic Claude 3.5.
               </p>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>

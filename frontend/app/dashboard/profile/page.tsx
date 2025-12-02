@@ -1,13 +1,14 @@
 "use client"
 import React, { useState, useEffect, ChangeEvent } from 'react';
+import Link from 'next/link';
 import { useAuthClient } from '@/hooks/useAuthClient';
 import { updateUserProfile } from '@/app/actions/user-actions';
 import { triggerSignIn, triggerSignOut } from '@/app/auth-actions';
 import {
   User, Shield, Camera, Save, LogOut,
-  GraduationCap, ChevronRight, Lock,
+  Brain, ChevronRight, Lock,
   Smartphone, Mail, Building, Eye, EyeOff,
-  Laptop, Key, Loader2, LucideIcon
+  Laptop, Key, Loader2, LucideIcon, LayoutDashboard
 } from 'lucide-react';
 
 interface UserData {
@@ -224,13 +225,11 @@ const ProfilePage: React.FC = () => {
           <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2 font-black text-xl tracking-tighter text-slate-900 dark:text-white">
               <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-                <GraduationCap className="w-5 h-5" />
+                <Brain className="w-5 h-5" />
               </div>
-              ScholarFit<span className="text-purple-600">.ai</span>
+              ScholarMatch<span className="text-purple-600">.ai</span>
             </div>
-            <button onClick={() => setIsDark(!isDark)} className="text-xs font-mono font-bold uppercase text-slate-500 hover:text-purple-500 transition-colors">
-              {isDark ? "Light Mode" : "Dark Mode"}
-            </button>
+
           </div>
         </nav>
 
@@ -254,6 +253,13 @@ const ProfilePage: React.FC = () => {
 
             {/* Sidebar Navigation */}
             <div className="lg:col-span-3 space-y-2">
+              <Link
+                href="/dashboard"
+                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:bg-white/50 dark:hover:bg-slate-900/50 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all duration-200 font-bold group"
+              >
+                <LayoutDashboard className="w-5 h-5 text-slate-400 group-hover:text-purple-600" />
+                <span>Dashboard</span>
+              </Link>
               {tabItems.map((item) => (
                 <button
                   key={item.id}
@@ -506,8 +512,8 @@ const ProfilePage: React.FC = () => {
 
           </div>
         </main>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 
