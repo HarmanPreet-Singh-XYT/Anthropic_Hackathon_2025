@@ -1,8 +1,8 @@
-# ScholarFit AI
+# ScholarMatch AI
 
 > Transform scholarship applications through intelligent narrative alignment
 
-ScholarFit AI is a revolutionary multi-agent AI platform that helps students win scholarships by aligning their authentic experiences with what scholarship committees truly value. Unlike generic AI essay writers, we analyze the "hidden DNA" of scholarships, identify narrative gaps using RAG technology, and conduct intelligent interviews to extract authentic stories—never fabricating content.
+ScholarMatch AI is a revolutionary multi-agent AI platform that helps students win scholarships by aligning their authentic experiences with what scholarship committees truly value. Unlike generic AI essay writers, we analyze the "hidden DNA" of scholarships, identify narrative gaps using RAG technology, and conduct intelligent interviews to extract authentic stories—never fabricating content.
 
 ## 🎯 Key Features
 
@@ -90,7 +90,7 @@ ScholarFit AI is a revolutionary multi-agent AI platform that helps students win
 
 ### The Multi-Agent Pipeline
 
-ScholarFit AI uses a sophisticated workflow orchestrated by LangGraph:
+ScholarMatch AI uses a sophisticated workflow orchestrated by LangGraph:
 
 1. **Scout Agent** 🔎
    - Scrapes scholarship websites for official criteria
@@ -156,7 +156,7 @@ Anthropic_Hack/
 
 ## 🔧 Configuration
 
-ScholarFit AI can be configured via environment variables in `.env`:
+ScholarMatch AI can be configured via environment variables in `.env`:
 
 ```bash
 # Required API Keys
@@ -216,4 +216,4 @@ Built with:
 
 ---
 
-**ScholarFit AI**: Empowering students to discover, articulate, and amplify their authentic stories. 🎓✨
+**ScholarMatch AI**: Empowering students to discover, articulate, and amplify their authentic stories. 🎓✨
