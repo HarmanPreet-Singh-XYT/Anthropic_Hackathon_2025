@@ -51,7 +51,7 @@ export default function ApplicationPage() {
                 if (data.status === "complete" && data.result) {
                     const appData = {
                         essay: data.result.essay_draft,
-                        resume_optimizations: data.result.resume_optimizations || [],
+                        resume_optimizations: data.result.resume_optimizations?.optimizations || [], // ← Changed
                         strategy_note: data.result.strategy_note,
                         full_resume_markdown: data.result.optimized_resume_markdown
                     };
