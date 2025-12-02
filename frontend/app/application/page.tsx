@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, FileDown, Loader2, CheckCircle, Copy, ArrowRight } from 'lucide-react';
+// Added LayoutGrid to imports for the dashboard icon
+import { Sparkles, FileDown, Loader2, CheckCircle, Copy, ArrowRight, LayoutGrid } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import TiptapEditor from '@/components/Editor';
+import { exportMarkdownToPDF } from '@/app/actions/export';
 
 // --- Types ---
 interface ApplicationData {
@@ -32,7 +32,7 @@ export default function ApplicationPage() {
     const [resumeContent, setResumeContent] = useState('');
     const router = useRouter();
     const searchParams = useSearchParams();
-    const session_id = searchParams.get('session');
+    const session_id = searchParams!.get('session');
     const contentRef = useRef<HTMLDivElement>(null);
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -73,34 +73,51 @@ export default function ApplicationPage() {
         fetchData();
     }, [session_id, router]);
 
+
     const handleExportPDF = async () => {
-        if (!resumeContent) return;
+        if (!resumeContent) {
+            console.warn('No resume content to export');
+            return;
+        }
 
         setIsExporting(true);
+        
         try {
-            const res = await fetch("/api/export/markdown", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ markdown: resumeContent }),
-            });
+            // Call the server action
+            const result = await exportMarkdownToPDF(resumeContent);
 
-            if (!res.ok) throw new Error("Failed to export PDF");
+            if (!result.success || !result.data) {
+                throw new Error(result.error || 'Failed to generate PDF');
+            }
 
-            const blob = await res.blob();
+            // Convert base64 to blob
+            const binaryString = atob(result.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+
+            // Create download link
             const url = URL.createObjectURL(blob);
-
-            const a = document.createElement("a");
+            const a = document.createElement('a');
             a.href = url;
-            a.download = "resume.pdf";
+            a.download = `resume-${new Date().toISOString().split('T')[0]}.pdf`;
+            
+            // Trigger download
             document.body.appendChild(a);
             a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
+            
+            // Cleanup
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 100);
 
+            // Show success message
             setExportSuccess(true);
             setTimeout(() => setExportSuccess(false), 3000);
+
         } catch (error) {
-            console.error("Error exporting PDF:", error);
+            console.error('Error exporting PDF:', error);
         } finally {
             setIsExporting(false);
         }
@@ -330,15 +347,6 @@ export default function ApplicationPage() {
                                     transition={{ duration: 0.3 }}
                                 >
                                     <div className="bg-[#0a0a0a]/50 border border-white/5 rounded-xl overflow-hidden min-h-[500px] relative">
-                                        {/* Copy Button */}
-                                        {/* <button
-                                            onClick={handleCopyResumeMarkdown}
-                                            className="absolute top-4 right-4 z-10 text-xs flex items-center gap-2 text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10 bg-[#0a0a0a]/80 border border-white/10"
-                                        >
-                                            {copiedResume ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                                            {copiedResume ? "Copied" : "Copy"}
-                                        </button> */}
-
                                         {resumeContent ? (
                                             <div className="h-[500px]">
                                                 <TiptapEditor
@@ -367,6 +375,15 @@ export default function ApplicationPage() {
                     transition={{ delay: 0.6 }}
                     className="flex justify-center gap-4 flex-wrap py-4 flex-shrink-0"
                 >
+                    {/* Dashboard Button (Added) */}
+                    <button
+                        onClick={() => router.push('/dashboard')}
+                        className="group relative h-12 px-6 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-[#111111] text-zinc-400 border border-white/10 hover:bg-white/5 hover:text-white transition-all duration-300"
+                    >
+                        <LayoutGrid className="w-4 h-4" />
+                        Dashboard
+                    </button>
+
                     <button
                         onClick={handleExportPDF}
                         disabled={isExporting}
@@ -405,7 +422,6 @@ export default function ApplicationPage() {
 
                     <button
                         onClick={() => {
-                            // Navigate back to start page with resume session to reuse
                             const resumeSessionId = localStorage.getItem('resume_session_id');
                             if (resumeSessionId) {
                                 router.push(`/start?resume_session=${resumeSessionId}`);
@@ -413,7 +429,7 @@ export default function ApplicationPage() {
                                 router.push('/start');
                             }
                         }}
-                        className="group relative h-12 px-6 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-purple-500/30 transition-all duration-300"
+                        className="group relative h-12 px-6 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white                        hover:from-purple-700 hover:to-blue-700 hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-purple-500/30 transition-all duration-300"
                     >
                         <span className="relative z-10 flex items-center gap-2">
                             <ArrowRight className="w-4 h-4" />

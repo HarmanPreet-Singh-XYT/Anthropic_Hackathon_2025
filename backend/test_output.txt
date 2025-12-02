@@ -1,0 +1,217 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-9.0.1, pluggy-1.6.0
+rootdir: /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend
+plugins: anyio-4.11.0, asyncio-1.3.0, langsmith-0.4.44
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items
+
+tests/test_dashboard_api.py ⚠️  [API] No valid user_id provided (received: 'None'). Using default 'test_user_demo'
+📊 [API] Fetching dashboard data for user: 'test_user_demo' (Original header: 'None')
+   ✓ User found: test_user_demo
+   📄 Total resume sessions in DB: <MagicMock name='mock.query().count()' id='4573287856'>
+   📄 Resume sessions found for user test_user_demo: 0
+   ⚠️  No resumes found. Checking if any workflows exist without user_id...
+   ⚠️  Found <MagicMock name='mock.query().filter().count()' id='4573350704'> workflows with no user_id
+   ✓ Built 0 resume items with workflows
+   ✓ Usage stats: {'queries_today': 0, 'queries_month': 0, 'tokens_used_today': 0, 'tokens_used_month': 0}
+   ✓ Built 0 activity items
+✅ [API] Dashboard data prepared successfully
+.📊 [API] Fetching dashboard data for user: 'test-user-123' (Original header: 'test-user-123')
+   ✓ User found: test-user-123
+   ✓ Wallet: 500 tokens
+   ✓ Subscription: Pro
+   📄 Total resume sessions in DB: <MagicMock name='mock.query().count()' id='4573737616'>
+   📄 Resume sessions found for user test-user-123: 1
+   📝 Processing resume: resume-1 (resume.pdf)
+      → Found 0 workflows for resume resume-1
+   ✓ Built 1 resume items with workflows
+   ✓ Usage stats: {'queries_today': 5, 'queries_month': 20, 'tokens_used_today': 100, 'tokens_used_month': 500}
+   ✓ Built 1 activity items
+✅ [API] Dashboard data prepared successfully
+DEBUG: Response status: 200
+DEBUG: Response data: {'user': {'id': 'test-user-123', 'email': 'test@example.com'}, 'wallet': {'balance_tokens': 500, 'currency': 'TOK', 'last_updated': '2023-01-01T00:00:00'}, 'subscription': {'status': 'active', 'plan': {'name': 'Pro', 'interval': 'month', 'price_cents': 2900, 'tokens_per_period': 5000, 'features': {}}, 'current_period_start': '2023-01-01T00:00:00', 'current_period_end': '2023-02-01T00:00:00'}, 'resume_sessions': [{'id': 'resume-1', 'filename': 'resume.pdf', 'file_size_bytes': 1024, 'created_at': '2023-01-01T00:00:00', 'text_preview': 'Preview', 'workflow_sessions': []}], 'usage': {'queries_today': 5, 'queries_month': 20, 'tokens_used_today': 100, 'tokens_used_month': 500}, 'recent_activity': [{'type': 'transaction_deduction', 'ref_id': 'tx-1', 'description': "Used tokens for <MagicMock name='mock.reference_id' id='4573858320'>", 'timestamp': '2023-01-01T00:00:00', 'amount': -10}]}
+DEBUG: Mock called? True
+DEBUG: Mock call args: call(<MagicMock id='4573677616'>, 'test-user-123')
+F
+
+=================================== FAILURES ===================================
+___________________________ test_dashboard_with_data ___________________________
+
+mock_resume_ops = <MagicMock name='ResumeSessionOperations' id='4572767024'>
+mock_workflow_ops = <MagicMock name='WorkflowSessionOperations' id='4573189360'>
+mock_app_ops = <MagicMock name='ApplicationOperations' id='4573474128'>
+mock_interview_ops = <MagicMock name='InterviewSessionOperations' id='4573477920'>
+mock_user_ops = <MagicMock name='UserOperations' id='4573531072'>
+mock_usage_ops = <MagicMock name='UsageRecordOperations' id='4573534912'>
+mock_wallet_ops = <MagicMock name='WalletTransactionOperations' id='4573537648'>
+
+    @patch("api.WalletTransactionOperations")
+    @patch("api.UsageRecordOperations")
+    @patch("api.UserOperations")
+    @patch("api.InterviewSessionOperations")
+    @patch("api.ApplicationOperations")
+    @patch("api.WorkflowSessionOperations")
+    @patch("api.ResumeSessionOperations")
+    def test_dashboard_with_data(
+        mock_resume_ops,
+        mock_workflow_ops,
+        mock_app_ops,
+        mock_interview_ops,
+        mock_user_ops,
+        mock_usage_ops,
+        mock_wallet_ops
+    ):
+        """Test dashboard endpoint with mocked data"""
+    
+        # Mock data
+        user_id = "test-user-123"
+    
+        # Mock User & Wallet
+        mock_user = MagicMock()
+        mock_user.id = user_id
+        mock_user.email = "test@example.com"
+        mock_user.wallet.balance_tokens = 500
+        mock_user.wallet.currency = "TOK"
+        mock_user.wallet.updated_at = "2023-01-01T00:00:00"
+    
+        # Mock Subscription
+        mock_sub = MagicMock()
+        mock_sub.status = "active"
+        mock_sub.plan.name = "Pro"
+        mock_sub.plan.interval = "month"
+        mock_sub.plan.price_cents = 2900
+        mock_sub.plan.tokens_per_period = 5000
+        mock_sub.plan.features = {}
+        mock_sub.current_period_start = "2023-01-01T00:00:00"
+        mock_sub.current_period_end = "2023-02-01T00:00:00"
+        mock_user.subscriptions = [mock_sub]
+    
+        mock_user_ops.create_if_not_exists.return_value = mock_user
+    
+        # Mock Resumes
+        mock_resume = MagicMock()
+        mock_resume.id = "resume-1"
+        mock_resume.filename = "resume.pdf"
+        mock_resume.file_size_bytes = 1024
+        mock_resume.created_at = "2023-01-01T00:00:00"
+        mock_resume.text_preview = "Preview"
+        mock_resume_ops.get_for_user_or_anonymous.return_value = [mock_resume]
+    
+        # Mock Workflows
+        mock_workflow = MagicMock()
+        mock_workflow.id = "workflow-1"
+        mock_workflow.status = "complete"
+        mock_workflow.scholarship_url = "http://example.com"
+        mock_workflow.match_score = 90.0
+        mock_workflow.created_at = "2023-01-01T00:00:00"
+        mock_workflow.updated_at = "2023-01-01T00:00:00"
+        mock_workflow.completed_at = "2023-01-01T00:00:00"
+        mock_workflow_ops.get_by_resume_session.return_value = [mock_workflow]
+        mock_workflow_ops.get_all.return_value = [mock_workflow] # For recent activity
+    
+        # Mock Applications
+        mock_app = MagicMock()
+        mock_app.id = "app-1"
+        mock_app.scholarship_url = "http://example.com"
+        mock_app.status = "complete"
+        mock_app.match_score = 90.0
+        mock_app.had_interview = True
+        mock_app.created_at = "2023-01-01T00:00:00"
+        mock_app_ops.get_by_workflow_session.return_value = mock_app
+    
+        # Mock Interviews
+        mock_interview = MagicMock()
+        mock_interview.id = "int-1"
+        mock_interview.current_target = "gap"
+        mock_interview.created_at = "2023-01-01T00:00:00"
+        mock_interview.completed_at = "2023-01-01T00:00:00"
+        mock_interview_ops.get_by_workflow.return_value = mock_interview
+    
+        # Mock Usage
+        mock_usage_ops.get_stats.return_value = {
+            "queries_today": 5,
+            "queries_month": 20,
+            "tokens_used_today": 100,
+            "tokens_used_month": 500
+        }
+    
+        # Mock Transactions
+        mock_tx = MagicMock()
+        mock_tx.id = "tx-1"
+        mock_tx.kind = "deduction"
+        mock_tx.amount = -10
+        mock_tx.created_at = "2023-01-01T00:00:00"
+        mock_wallet_ops.get_recent.return_value = [mock_tx]
+    
+        response = client.get("/api/dashboard", headers={"x-user-id": user_id})
+    
+        print(f"DEBUG: Response status: {response.status_code}")
+        print(f"DEBUG: Response data: {response.json()}")
+    
+        # Verify mock was called
+        print(f"DEBUG: Mock called? {mock_resume_ops.get_for_user_or_anonymous.called}")
+        if mock_resume_ops.get_for_user_or_anonymous.called:
+            print(f"DEBUG: Mock call args: {mock_resume_ops.get_for_user_or_anonymous.call_args}")
+    
+        assert response.status_code == 200
+        data = response.json()
+    
+        # Verify structure
+        assert data["user"]["id"] == user_id
+        assert data["wallet"]["balance_tokens"] == 500
+        assert data["subscription"]["status"] == "active"
+        assert data["subscription"]["plan"]["name"] == "Pro"
+    
+        assert len(data["resume_sessions"]) == 1
+        resume = data["resume_sessions"][0]
+        assert resume["id"] == "resume-1"
+>       assert len(resume["workflow_sessions"]) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_dashboard_api.py:184: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/PyPDF2/__init__.py:21
+  /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend/.venv/lib/python3.12/site-packages/PyPDF2/__init__.py:21: DeprecationWarning: PyPDF2 is deprecated. Please move to the pypdf library instead.
+    warnings.warn(
+
+agents/scout_schemas.py:175
+  /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend/agents/scout_schemas.py:175: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ScoutIntelligence(BaseModel):
+
+database.py:13
+  /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend/database.py:13: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+api.py:327
+  /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend/api.py:327: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.12/site-packages/fastapi/applications.py:4575
+.venv/lib/python3.12/site-packages/fastapi/applications.py:4575
+  /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend/.venv/lib/python3.12/site-packages/fastapi/applications.py:4575: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+api.py:383
+  /Users/harmanpreetsingh/Public/Code/Anthropic_Hack/backend/api.py:383: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_dashboard_api.py::test_dashboard_with_data - assert 0 == 1
+=================== 1 failed, 1 passed, 7 warnings in 0.80s ====================

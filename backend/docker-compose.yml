@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: scholarmatch_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: scholarmatch
+      POSTGRES_PASSWORD: scholarmatch
+      POSTGRES_DB: scholarmatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: scholarmatch_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+
+# DATABASE_URL=postgresql://scholarmatch:scholarmatch@postgres:5432/scholarmatch

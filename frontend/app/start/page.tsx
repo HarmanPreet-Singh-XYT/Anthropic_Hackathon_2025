@@ -5,6 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Link2, Zap, ArrowRight, FileText, X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ParticleBackground } from '@/components/ParticleBackground';
+import { uploadResume, startWorkflow, getWorkflowStatus } from '@/lib/api';
+import { useAuthClient } from '@/hooks/useAuthClient';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 export default function StartPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -25,40 +28,82 @@ export default function StartPage() {
     const [useExistingResume, setUseExistingResume] = useState<boolean>(false);
     const [checkingSession, setCheckingSession] = useState<boolean>(true);
 
+    // Use the client-side auth hook
+    const { user, isLoading: isAuthLoading } = useAuthClient();
+
     const router = useRouter();
     const searchParams = useSearchParams();
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+    // Helper function to get user-specific localStorage key
+    const getUserStorageKey = (userId: string) => `resume_session_${userId}`;
+
+    // Helper function to clear old/invalid sessions from localStorage
+    const clearInvalidSessions = (currentUserId: string) => {
+        // Clear any sessions that don't match the current user
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key?.startsWith('resume_session_') && key !== getUserStorageKey(currentUserId)) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        
+        // Also clear the old non-user-specific key if it exists
+        localStorage.removeItem('resume_session_id');
+    };
+
     // Check for existing resume session on mount
     useEffect(() => {
         const checkExistingSession = async () => {
+            // Wait for auth to be ready
+            if (isAuthLoading) {
+                return;
+            }
+
+            // If no user, clear checking state and return
+            if (!user || !user.sub) {
+                setCheckingSession(false);
+                return;
+            }
+
             try {
-                // Check URL params first, then localStorage
+                const userId = user.sub;
+                
+                // Clear any invalid/old sessions for other users
+                clearInvalidSessions(userId);
+
+                // Check URL params first, then user-specific localStorage
                 const urlResumeSession = searchParams.get('resume_session');
-                const storedResumeSession = localStorage.getItem('resume_session_id');
+                const storedResumeSession = localStorage.getItem(getUserStorageKey(userId));
                 const resumeSessionId = urlResumeSession || storedResumeSession;
 
                 if (!resumeSessionId) {
+                    console.log('[StartPage] No existing resume session found');
                     setCheckingSession(false);
                     return;
                 }
 
                 console.log('[StartPage] Checking for existing resume session:', resumeSessionId);
 
-                // Validate the session with backend
-                const response = await fetch(`${API_URL}/api/resume/session/${resumeSessionId}/validate`);
+                // Validate the session with backend, including user_id for verification
+                const response = await fetch(
+                    `${API_URL}/api/resume/session/${resumeSessionId}/validate?user_id=${encodeURIComponent(userId)}`
+                );
 
                 if (!response.ok) {
                     console.log('[StartPage] Failed to validate session');
-                    localStorage.removeItem('resume_session_id');
+                    localStorage.removeItem(getUserStorageKey(userId));
                     setCheckingSession(false);
                     return;
                 }
 
                 const data = await response.json();
 
-                if (data.valid) {
+                // Verify the session belongs to the current user
+                if (data.valid && data.user_id === userId) {
                     console.log(`[StartPage] Found valid resume session with ${data.chunks_count} chunks`);
                     setExistingResumeSession({
                         session_id: data.session_id,
@@ -67,20 +112,21 @@ export default function StartPage() {
                     });
                     setUseExistingResume(true);
                 } else {
-                    console.log('[StartPage] Resume session invalid, removing from storage');
-                    localStorage.removeItem('resume_session_id');
+                    console.log('[StartPage] Resume session invalid or belongs to different user, removing from storage');
+                    localStorage.removeItem(getUserStorageKey(userId));
                 }
             } catch (err) {
                 console.error('[StartPage] Error checking existing session:', err);
-                localStorage.removeItem('resume_session_id');
+                if (user?.sub) {
+                    localStorage.removeItem(getUserStorageKey(user.sub));
+                }
             } finally {
                 setCheckingSession(false);
             }
         };
 
         checkExistingSession();
-    }, [searchParams, API_URL]);
-
+    }, [searchParams, API_URL, user, isAuthLoading]);
 
     // Drag & Drop Handlers
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -125,6 +171,8 @@ export default function StartPage() {
         }
 
         setFile(f);
+        // When a new file is selected, clear the existing resume flag
+        setUseExistingResume(false);
     };
 
     const removeFile = (e: React.MouseEvent) => {
@@ -135,9 +183,27 @@ export default function StartPage() {
     };
 
     const handleSubmit = async () => {
-        // Allow submission with only URL if using existing resume
-        if (!useExistingResume && !file) return;
-        if (!url) return;
+        // Check authentication first
+        if (!user || !user.sub) {
+            setError('Please sign in to continue');
+            // Trigger sign-in
+            const { triggerSignIn } = await import('@/app/auth-actions');
+            await triggerSignIn();
+            return;
+        }
+
+        const userId = user.sub;
+
+        // Validate we have either a file or an existing resume session
+        if (!useExistingResume && !file) {
+            setError('Please upload a resume');
+            return;
+        }
+        
+        if (!url) {
+            setError('Please provide a scholarship URL');
+            return;
+        }
 
         setIsSubmitting(true);
         setError(null);
@@ -150,7 +216,22 @@ export default function StartPage() {
 
             // Step 1: Handle resume - either upload new or use existing
             if (useExistingResume && existingResumeSession) {
-                // Use existing resume session
+                // Double-check the existing session is still valid and belongs to this user
+                const validateResponse = await fetch(
+                    `${API_URL}/api/resume/session/${existingResumeSession.session_id}/validate?user_id=${encodeURIComponent(userId)}`
+                );
+                
+                if (!validateResponse.ok) {
+                    throw new Error('Existing resume session is no longer valid. Please upload a new resume.');
+                }
+
+                const validateData = await validateResponse.json();
+                
+                if (!validateData.valid || validateData.user_id !== userId) {
+                    localStorage.removeItem(getUserStorageKey(userId));
+                    throw new Error('Existing resume session is invalid or belongs to another user. Please upload a new resume.');
+                }
+
                 console.log("[StartPage] Using existing resume session:", existingResumeSession.session_id);
                 resumeSessionId = existingResumeSession.session_id;
                 setProgress(20);
@@ -161,27 +242,14 @@ export default function StartPage() {
                 setProgress(10);
                 setProgressStatus('Uploading your resume...');
 
-                const uploadFormData = new FormData();
-                uploadFormData.append('file', file);
-
-                const uploadResponse = await fetch(`${API_URL}/api/upload-resume`, {
-                    method: 'POST',
-                    body: uploadFormData,
-                });
-
-                if (!uploadResponse.ok) {
-                    const errorData = await uploadResponse.json();
-                    throw new Error(errorData.detail || 'Failed to upload resume');
-                }
-
-                const uploadData = await uploadResponse.json();
+                const uploadData = await uploadResume(file, userId);
                 resumeSessionId = uploadData.metadata.session_id;
 
                 console.log("[StartPage] Resume uploaded, session_id:", resumeSessionId);
                 console.log(`[StartPage] Stored ${uploadData.chunks_stored} chunks`);
 
-                // Store session_id for potential later use
-                localStorage.setItem('resume_session_id', resumeSessionId);
+                // Store session_id in user-specific localStorage
+                localStorage.setItem(getUserStorageKey(userId), resumeSessionId);
                 setProgress(20);
                 setProgressStatus('Resume uploaded successfully!');
             } else {
@@ -193,22 +261,9 @@ export default function StartPage() {
             setProgress(30);
             setProgressStatus('Analyzing scholarship requirements...');
 
-            const workflowFormData = new FormData();
-            workflowFormData.append('scholarship_url', url);
-            workflowFormData.append('resume_session_id', resumeSessionId);
-
-            const response = await fetch(`${API_URL}/api/workflow/start`, {
-                method: 'POST',
-                body: workflowFormData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Failed to start workflow');
-            }
-
-            const { session_id: workflowSessionId } = await response.json();
+            const { session_id: workflowSessionId } = await startWorkflow(url, resumeSessionId, userId);
             console.log("[StartPage] Workflow started");
+            console.log(`  User: ${userId}`);
             console.log(`  Resume session: ${resumeSessionId}`);
             console.log(`  Workflow session: ${workflowSessionId}`);
 
@@ -238,18 +293,10 @@ export default function StartPage() {
                     setProgressStatus('Finalizing analysis...');
                 }
 
-                const statusResponse = await fetch(
-                    `${API_URL}/api/workflow/status/${workflowSessionId}`
-                );
-
-                if (!statusResponse.ok) {
-                    throw new Error('Failed to check workflow status');
-                }
-
-                const statusData = await statusResponse.json();
+                const statusData = await getWorkflowStatus(workflowSessionId, userId);
                 console.log(`[StartPage] Poll #${pollCount}:`, statusData.status);
 
-                if (statusData.status === 'processing' || statusData.status === 'processing_resume') {
+                if (statusData.status === 'processing') {
                     continue;
                 } else if (statusData.status === 'complete' || statusData.status === 'waiting_for_input') {
                     console.log("[StartPage] Workflow reached target state:", statusData.status);
@@ -285,10 +332,37 @@ export default function StartPage() {
         }
     };
 
+    // Show loading state while auth is being checked
+    if (isAuthLoading || checkingSession) {
+        return (
+            <div className="min-h-screen bg-black flex items-center justify-center">
+                <div className="text-center space-y-4">
+                    <Loader2 className="w-8 h-8 text-white animate-spin mx-auto" />
+                    <p className="text-gray-400">
+                        {isAuthLoading ? 'Loading...' : 'Checking session...'}
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-black text-white font-sans selection:bg-white/20 overflow-hidden relative flex flex-col items-center justify-center">
 
             <ParticleBackground />
+
+            {/* Exit Button for Authenticated Users */}
+            {user && (
+                <button
+                    onClick={() => router.push('/dashboard')}
+                    className="absolute top-6 left-6 z-50 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-sm group flex items-center gap-2 pr-4"
+                >
+                    <div className="bg-white/10 p-1 rounded-full group-hover:bg-white/20">
+                        <X className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider">Exit</span>
+                </button>
+            )}
 
             {/* Animated Mesh Gradient Background */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -320,7 +394,6 @@ export default function StartPage() {
                 />
             </div>
 
-            {/* Show progress bar when analyzing */}
             <AnimatePresence mode="wait">
                 {isSubmitting ? (
                     <motion.div
@@ -361,7 +434,7 @@ export default function StartPage() {
                         {/* Progress Bar Container */}
                         <motion.div
                             className="w-full space-y-4"
-                            initial={{ opacity: 0, y: 20 }}
+                                                        initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.3 }}
                         >
@@ -552,89 +625,130 @@ export default function StartPage() {
 
                             <div className="relative bg-black/70 backdrop-blur-3xl border border-white/20 rounded-3xl p-8 space-y-6">
 
-                                {/* Resume Upload */}
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
+                                {/* Existing Resume Banner */}
+                                <AnimatePresence>
+                                    {existingResumeSession && useExistingResume && !file && (
                                         <motion.div
-                                            animate={{ scale: [1, 1.3, 1] }}
-                                            transition={{ duration: 2, repeat: Infinity }}
-                                            className="w-2 h-2 bg-white rounded-full"
-                                        />
-                                        Resume Upload
-                                    </div>
-
-                                    <div
-                                        onClick={() => document.getElementById('file-upload')?.click()}
-                                        onDragOver={handleDragOver}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={handleDrop}
-                                        className={`
-                                            relative h-48 rounded-2xl border transition-all duration-300 cursor-pointer
-                                            flex flex-col items-center justify-center text-center
-                                            ${isDragging
-                                                ? 'border-white/40 bg-white/10 scale-[1.02]'
-                                                : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
-                                            }
-                                        `}
-                                    >
-                                        <input
-                                            id="file-upload"
-                                            type="file"
-                                            className="hidden"
-                                            accept=".pdf"
-                                            onChange={handleFileSelect}
-                                        />
-
-                                        <AnimatePresence mode="wait">
-                                            {!file ? (
-                                                <motion.div
-                                                    key="empty"
-                                                    initial={{ opacity: 0 }}
-                                                    animate={{ opacity: 1 }}
-                                                    exit={{ opacity: 0 }}
-                                                    className="flex flex-col items-center gap-4"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3">
+                                                    <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                                                    <div>
+                                                        <p className="text-sm text-green-200 font-medium">
+                                                            Using your existing resume
+                                                        </p>
+                                                        <p className="text-xs text-green-300/70 mt-1">
+                                                            {existingResumeSession.chunks_count} sections loaded
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setUseExistingResume(false);
+                                                        setExistingResumeSession(null);
+                                                        if (user?.sub) {
+                                                            localStorage.removeItem(getUserStorageKey(user.sub));
+                                                        }
+                                                    }}
+                                                    className="text-xs text-green-300/70 hover:text-green-200 transition-colors flex items-center gap-1"
                                                 >
+                                                    <RefreshCw className="w-3 h-3" />
+                                                    Upload New
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Resume Upload - Only show if not using existing resume */}
+                                {(!useExistingResume || file) && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-400 uppercase">
+                                            <motion.div
+                                                animate={{ scale: [1, 1.3, 1] }}
+                                                transition={{ duration: 2, repeat: Infinity }}
+                                                className="w-2 h-2 bg-white rounded-full"
+                                            />
+                                            Resume Upload
+                                        </div>
+
+                                        <div
+                                            onClick={() => document.getElementById('file-upload')?.click()}
+                                            onDragOver={handleDragOver}
+                                            onDragLeave={handleDragLeave}
+                                            onDrop={handleDrop}
+                                            className={`
+                                                relative h-48 rounded-2xl border transition-all duration-300 cursor-pointer
+                                                flex flex-col items-center justify-center text-center
+                                                ${isDragging
+                                                    ? 'border-white/40 bg-white/10 scale-[1.02]'
+                                                    : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
+                                                }
+                                            `}
+                                        >
+                                            <input
+                                                id="file-upload"
+                                                type="file"
+                                                className="hidden"
+                                                accept=".pdf"
+                                                onChange={handleFileSelect}
+                                            />
+
+                                            <AnimatePresence mode="wait">
+                                                {!file ? (
                                                     <motion.div
-                                                        whileHover={{ scale: 1.1 }}
-                                                        className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center"
+                                                        key="empty"
+                                                        initial={{ opacity: 0 }}
+                                                        animate={{ opacity: 1 }}
+                                                        exit={{ opacity: 0 }}
+                                                        className="flex flex-col items-center gap-4"
                                                     >
-                                                        <Upload className="w-6 h-6 text-white" />
+                                                        <motion.div
+                                                            whileHover={{ scale: 1.1 }}
+                                                            className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center"
+                                                        >
+                                                            <Upload className="w-6 h-6 text-white" />
+                                                        </motion.div>
+                                                        <div className="space-y-1">
+                                                            <p className="text-lg font-medium text-white">
+                                                                Drop your resume here
+                                                            </p>
+                                                            <p className="text-sm text-gray-400">
+                                                                PDF files only
+                                                            </p>
+                                                        </div>
                                                     </motion.div>
-                                                    <div className="space-y-1">
-                                                        <p className="text-lg font-medium text-white">
-                                                            Drop your resume here
-                                                        </p>
-                                                        <p className="text-sm text-gray-400">
-                                                            PDF files only
-                                                        </p>
-                                                    </div>
-                                                </motion.div>
-                                            ) : (
-                                                <motion.div
-                                                    key="file"
-                                                    initial={{ opacity: 0, scale: 0.9 }}
-                                                    animate={{ opacity: 1, scale: 1 }}
-                                                    exit={{ opacity: 0, scale: 0.9 }}
-                                                    className="flex flex-col items-center gap-3 z-10"
-                                                >
-                                                    <div className="w-14 h-14 rounded-2xl bg-white text-black flex items-center justify-center shadow-lg">
-                                                        <FileText className="w-7 h-7" />
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="text-white font-medium truncate max-w-[200px]">{file.name}</p>
-                                                        <p className="text-xs text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                                                    </div>
-                                                    <button
-                                                        onClick={removeFile}
-                                                        className="mt-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-xs font-medium text-gray-300 transition-colors flex items-center gap-1.5"
+                                                ) : (
+                                                    <motion.div
+                                                        key="file"
+                                                        initial={{ opacity: 0, scale: 0.9 }}
+                                                        animate={{ opacity: 1, scale: 1 }}
+                                                        exit={{ opacity: 0, scale: 0.9 }}
+                                                        className="flex flex-col items-center gap-3 z-10"
                                                     >
-                                                        <X className="w-3 h-3" /> Remove
-                                                    </button>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
+                                                        <div className="w-14 h-14 rounded-2xl bg-white text-black flex items-center justify-center shadow-lg">
+                                                            <FileText className="w-7 h-7" />
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <p className="text-white font-medium truncate max-w-[200px]">{file.name}</p>
+                                                            <p className="text-xs text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                        </div>
+                                                        <button
+                                                            onClick={removeFile}
+                                                            className="mt-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-xs font-medium text-gray-300 transition-colors flex items-center gap-1.5"
+                                                        >
+                                                            <X className="w-3 h-3" /> Remove
+                                                        </button>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 {/* Scholarship URL */}
                                 <div className="space-y-3">
@@ -694,13 +808,13 @@ export default function StartPage() {
                                 {/* Action Button */}
                                 <motion.button
                                     onClick={handleSubmit}
-                                    disabled={(!file && !url) || isSubmitting}
-                                    whileHover={(!file && !url) || isSubmitting ? {} : { scale: 1.02 }}
-                                    whileTap={(!file && !url) || isSubmitting ? {} : { scale: 0.98 }}
+                                    disabled={(!file && !useExistingResume) || !url || isSubmitting}
+                                    whileHover={(!file && !useExistingResume) || !url || isSubmitting ? {} : { scale: 1.02 }}
+                                    whileTap={(!file && !useExistingResume) || !url || isSubmitting ? {} : { scale: 0.98 }}
                                     className={`
                                         w-full h-14 rounded-xl font-medium text-lg transition-all duration-300 
                                         flex items-center justify-center gap-2
-                                        ${(!file && !url)
+                                        ${(!file && !useExistingResume) || !url
                                             ? 'bg-white/10 text-gray-600 cursor-not-allowed'
                                             : isSubmitting
                                                 ? 'bg-white text-black cursor-wait'

@@ -23,6 +23,7 @@ class Settings:
         self.tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
         self.google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
         self.google_cse_id: str = os.getenv("GOOGLE_CSE_ID", "")
+        self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
         # Paths
         self.base_dir: Path = Path(__file__).parent.parent
@@ -35,6 +36,9 @@ class Settings:
         self.embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
         self.temperature: float = float(os.getenv("TEMPERATURE", "0.7"))
 
+        # LLM Provider Configuration
+        self.llm_provider: str = os.getenv("LLM_PROVIDER", "anthropic")  # "anthropic" or "openai"
+
         # Vector Store Configuration
         self.chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
         self.chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "50"))
@@ -45,6 +49,32 @@ class Settings:
 
         # Essay Configuration
         self.default_word_limit: int = int(os.getenv("DEFAULT_WORD_LIMIT", "500"))
+
+        # Database Configuration
+        self.database_url: str = os.getenv(
+            "DATABASE_URL",
+            "postgresql://scholarfit:scholarfit@localhost:5432/scholarfit"
+        )
+
+        # File Upload Configuration
+        self.max_upload_size_mb: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "5"))
+        self.allowed_file_types: list = [".pdf"]
+
+        # Server Configuration
+        self.host: str = os.getenv("HOST", "0.0.0.0")
+        self.port: int = int(os.getenv("PORT", "8000"))
+        self.debug: bool = os.getenv("DEBUG", "False").lower() == "true"
+
+        # CORS Origins
+        self.cors_origins: list = os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:3000,http://localhost:3001"
+        ).split(",")
+
+        # Stripe Configuration
+        self.stripe_secret_key: str = os.getenv("STRIPE_SECRET_KEY", "")
+        self.stripe_publishable_key: str = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+        self.stripe_webhook_secret: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
         # Ensure directories exist
         self._create_directories()
@@ -65,8 +95,12 @@ class Settings:
         errors = []
 
         # Check required API keys
-        if not self.anthropic_api_key:
-            errors.append("ANTHROPIC_API_KEY is required but not set")
+        if not self.anthropic_api_key and self.llm_provider == "anthropic":
+            errors.append("ANTHROPIC_API_KEY is required but not set (LLM_PROVIDER=anthropic)")
+        
+        if not self.openai_api_key and self.llm_provider == "openai":
+            errors.append("OPENAI_API_KEY is required but not set (LLM_PROVIDER=openai)")
+        
         if not self.tavily_api_key:
             errors.append("TAVILY_API_KEY is required but not set")
 
@@ -96,6 +130,17 @@ class Settings:
         if self.default_word_limit <= 0:
             errors.append(f"DEFAULT_WORD_LIMIT must be positive, got {self.default_word_limit}")
 
+        # Validate database URL format
+        if not self.database_url.startswith("postgresql://"):
+            errors.append(f"DATABASE_URL must start with 'postgresql://', got {self.database_url[:20]}...")
+
+        # Validate server configuration
+        if self.port <= 0 or self.port > 65535:
+            errors.append(f"PORT must be between 1 and 65535, got {self.port}")
+
+        if self.max_upload_size_mb <= 0:
+            errors.append(f"MAX_UPLOAD_SIZE_MB must be positive, got {self.max_upload_size_mb}")
+
         # Return validation result
         return (len(errors) == 0, errors)
 
@@ -107,7 +152,64 @@ class Settings:
         Returns:
             True if API keys are set, False otherwise
         """
-        return bool(self.anthropic_api_key and self.tavily_api_key)
+        llm_key_valid = (
+            (self.llm_provider == "anthropic" and self.anthropic_api_key) or
+            (self.llm_provider == "openai" and self.openai_api_key)
+        )
+        return bool(llm_key_valid and self.tavily_api_key)
+
+    def get_database_components(self) -> dict:
+        """
+        Parse database URL into components
+        
+        Returns:
+            Dictionary with database connection components
+        """
+        # Basic parsing of postgresql://user:password@host:port/database
+        try:
+            if not self.database_url.startswith("postgresql://"):
+                return {}
+            
+            # Remove protocol
+            url = self.database_url.replace("postgresql://", "")
+            
+            # Split user:password from rest
+            auth, rest = url.split("@", 1)
+            user, password = auth.split(":", 1)
+            
+            # Split host:port from database
+            host_port, database = rest.split("/", 1)
+            
+            # Handle optional port
+            if ":" in host_port:
+                host, port = host_port.split(":", 1)
+                port = int(port)
+            else:
+                host = host_port
+                port = 5432
+            
+            return {
+                "user": user,
+                "password": password,
+                "host": host,
+                "port": port,
+                "database": database.split("?")[0]  # Remove query params if any
+            }
+        except Exception:
+            return {}
+
+    def __repr__(self) -> str:
+        """String representation of settings (without sensitive data)"""
+        return (
+            f"Settings(\n"
+            f"  LLM Provider: {self.llm_provider}\n"
+            f"  LLM Model: {self.llm_model}\n"
+            f"  Database: {self.get_database_components().get('database', 'N/A')}\n"
+            f"  ChromaDB: {self.chroma_dir}\n"
+            f"  Server: {self.host}:{self.port}\n"
+            f"  Debug: {self.debug}\n"
+            f")"
+        )
 
 
 # Global settings instance
